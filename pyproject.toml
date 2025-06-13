@@ -1,0 +1,45 @@
+[project]
+name = "nerve_cli"
+version = "0.1.0"
+description = "Nerve API examples CLI tool"
+authors = [
+    {name = "Nerve Development Team",email = "dev@nerve.cloud"}
+]
+readme = "README.md"
+requires-python = ">=3.9,<4.0"
+
+
+dependencies = [
+    "nerve-lib @ git+https://github.com/tttech-nerve/nerve-api-python.git",
+]
+
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.3.4"
+ruff = "^0.9.9"
+hypothesis = "^6.127.3"
+pytest-cov = "^6.0.0"
+
+[project.scripts]
+nerve-cli = "nerve_cli:main"
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+
+[tool.ruff]
+extend = "../pyproject.toml"
+
+
+
+
+[tool.coverage.run]
+branch = true
+source = ["nerve_cli"]
+
+[tool.coverage.html]
+directory = "coverage_html_report"
+
+[tool.pytest.ini_options]
+addopts = "--tb=line --cov --cov-report html"
