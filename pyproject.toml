@@ -1,0 +1,99 @@
+[project]
+name = "nerve_cli"
+version = "0.1.0"
+description = "Nerve API examples CLI tool"
+authors = [
+    {name = "Nerve Development Team",email = "dev@nerve.cloud"}
+]
+readme = "README.md"
+requires-python = ">=3.9,<4.0"
+
+
+dependencies = [
+    "nerve-lib @ git+https://github.com/tttech-nerve/nerve-api-python.git",
+]
+
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.3.4"
+ruff = "^0.9.9"
+hypothesis = "^6.127.3"
+pytest-cov = "^6.0.0"
+
+[project.scripts]
+nerve-cli = "nerve_cli:main"
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.coverage.run]
+branch = true
+source = ["nerve_cli"]
+
+[tool.coverage.html]
+directory = "coverage_html_report"
+
+[tool.pytest.ini_options]
+addopts = "--tb=line --cov --cov-report html"
+
+[tool.ruff]
+line-length = 110
+preview = true
+
+# Exclude a variety of commonly ignored directories.
+extend-exclude = ["*/__init__.py"]
+
+output-format = "concise"
+
+[tool.ruff.lint]
+# check rules and warning in https://docs.astral.sh/ruff/rules/
+# Enable Isort ("I")
+# Enable docstyle ("D")
+# Enable pylint ("PL")
+# Enable flake8-logging-format ("G")
+# Enable flake8-import-str-concat ("ISC")
+# Enable flake8-import-conventions ("ICN")
+# Enable pep8-naming ("N")
+# Enable flake8-copyright ("CPY")
+# Enable flake8-return ("RET")
+# Enable flake8-fixme
+# Enable ruff specific rules ("RUF")
+extend-select = [
+    "I",
+    "G",
+    "PL",
+    "ISC002",
+    "ISC003",
+    "ICN",
+    "N",
+    "CPY",
+    "RET",
+    "FIX",
+    "RUF",
+]
+
+#Ignore warnings/errors when checking code
+ignore = []
+
+unfixable = [
+    "PLW1510", # `subprocess.run` without explicit `check` argument - not deemed safe
+    "PLW1514", # `open` in text mode without explicit `encoding` argument - no autofix for encoding issues
+    "RET503",  # Missing explicit `return` at the end of function
+]
+
+pydocstyle.convention = "numpy"
+
+isort.force-single-line = true
+
+# Maximum number of arguments allowed for a function or method definition (see: PLR0913).
+pylint.max-args = 12
+
+# Maximum number of branch for function / method body (see R0912).
+pylint.max-branches = 30
+
+# Maximum number of return / yield for function / method body (see R0911).
+pylint.max-returns = 8
+
+# Maximum number of statements in function / method body (see R0915).
+pylint.max-statements = 80
