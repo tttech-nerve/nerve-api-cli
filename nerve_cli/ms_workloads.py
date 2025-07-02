@@ -104,21 +104,21 @@ def args_ms_workloads(parser):
     required_group = parser.add_argument_group("Mutually exclusive arguments for action")
     action_group = required_group.add_mutually_exclusive_group(required=True)
     action_group.add_argument(
-        "-l", "--list", help="List the workloads and store results to 'file'", action="store_true"
+        "-l", "--list", help="List the workloads (and versions) and store results to 'file'", action="store_true"
     )
     action_group.add_argument(
         "-c",
         "--copy",
-        help="Downloads the workloads, storing the workload definitions to 'file' and the workload files to 'path'",
+        help="Downloads the workload version, storing the workload definitions to 'file' and the workload files to 'path'",
         action="store_true",
     )
     action_group.add_argument(
-        "--delete", help="Delete the workloads specified in 'file'", action="store_true"
+        "--delete", help="Delete the workloads or versions specified in 'file'", action="store_true"
     )
     action_group.add_argument(
         "-d",
         "--deploy",
-        help="Deploy the workloads defined in 'file' to the nodes (within 'nodes_file')",
+        help="Deploy the workload version defined in 'file' to the nodes (within 'nodes_file')",
         action="store_true",
     )
 
@@ -395,5 +395,5 @@ def ms_workloads(ms_workloads, ms_nodes, work_dir, arg, log=None):  # noqa: PLR0
         _ms_workloads_list(ms_workloads, work_dir, args, log, copy=False)
     if args.delete:
         _ms_workloads_delete(ms_workloads, work_dir, args, log)
-    if args.nodes_deploy:
+    if args.deploy:
         _ms_workloads_deploy(ms_workloads, ms_nodes, work_dir, args, log)
