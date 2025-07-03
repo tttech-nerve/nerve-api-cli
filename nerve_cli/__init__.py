@@ -26,6 +26,7 @@ import logging
 import os
 import sys
 import json
+import requests
 
 from nerve_lib import MSHandle
 from nerve_lib import MSLabel
@@ -144,7 +145,7 @@ class NerveCLI(cmd.Cmd):
             return True
         elif not self.ms.usr and not self.ms.psw:
             raise ValueError(
-                "Please define either a login credentials or a sessionid in the session.ini file."
+                "Please define either login credentials or a sessionid in the session.ini file."
             )
 
     def _login_decorator(self, func):
@@ -348,26 +349,61 @@ def main():
     if not hasattr(args, "func"):
         raise SystemExit("No sub-command specified")
 
-    cli = NerveCLI(args.ms_url, args.ms_user, args.ms_password, args.work_dir, args.log_level)
+    try:
+        cli = NerveCLI(args.ms_url, args.ms_user, args.ms_password, args.work_dir, args.log_level)
+        if "workload_create" == args.func:
+            cli.do_workload_create(args)
+        if "ms_workloads" == args.func:
+            cli.do_ms_workloads(args)
+        if "nodes_list" == args.func:
+            cli.do_nodes_list(args)
+        if "nodes_reboot" == args.func:
+            cli.do_nodes_reboot(args)
+        if "nodes_dna" == args.func:
+            cli.do_nodes_dna(args)
+        if "nodes_workloads_state" == args.func:
+            cli.do_nodes_workloads_state(args)
+        if "nodes_remote_connections" == args.func:
+            cli.do_nodes_remote_connections(args)
+        if "labels" == args.func:
+            cli.do_labels(args)
+        if "logout" == args.func:
+            cli.do_logout()
+    except Exception as e:
+        error = {
+            "dns": "Name or service not known",
+            "provide_credentials": "Please define either login credentials or a sessionid in the session.ini",
+            "404": "404 Not Found",
+            "invalid_credentials": "Invalid credentials",
+        }
+        emsg = "An error occured: "
+        print_trace = False
+        if isinstance(e, requests.exceptions.ConnectionError):
+            if error["dns"] in str(e):
+                emsg = "The URL of the Management System could not be resolved"
+            else:
+                emsg = f"Failed to connect to Management System: {e}"
+        elif isinstance(e, ValueError):
+            if error["provide_credentials"] in str(e):
+                emsg = error["provide_credentials"]
+            else:
+                print_trace = True
+        elif error["404"] in str(e):
+            emsg = "The URL either does not exist or it does not point to a Nerve Management System"
+        elif error["invalid_credentials"] in str(e):
+            emsg = "Failed to authorize (invalid credentials). Please check your credentials"
+        else:
+            print_trace = True
 
-    if "workload_create" == args.func:
-        cli.do_workload_create(args)
-    if "ms_workloads" == args.func:
-        cli.do_ms_workloads(args)
-    if "nodes_list" == args.func:
-        cli.do_nodes_list(args)
-    if "nodes_reboot" == args.func:
-        cli.do_nodes_reboot(args)
-    if "nodes_dna" == args.func:
-        cli.do_nodes_dna(args)
-    if "nodes_workloads_state" == args.func:
-        cli.do_nodes_workloads_state(args)
-    if "nodes_remote_connections" == args.func:
-        cli.do_nodes_remote_connections(args)
-    if "labels" == args.func:
-        cli.do_labels(args)
-    if "logout" == args.func:
-        cli.do_logout()
+        if 'cli' in locals():
+            cli._log.error(emsg)
+        else:
+            sys.stderr.write(emsg + "\n")
+        if print_trace:
+            import traceback
+            traceback.print_exc()
+        sys.exit(1)
+
 
     if "cli" == args.func:
         try:

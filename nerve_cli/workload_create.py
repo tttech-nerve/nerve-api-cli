@@ -48,7 +48,9 @@ def args_workload_create(parser):
         "-t",
         "--template",
         help="Create a workload template and write it to the 'file'.",
-        choices=["docker", "registry", "codesys", "vm", "docker-compose"],
+        # choices=["docker", "registry", "codesys", "vm", "docker-compose"],
+        # TODO: Add registry template when implemented
+        choices=["docker", "codesys", "vm", "docker-compose"],
     )
 
     action_group.add_argument(
@@ -62,7 +64,7 @@ def args_workload_create(parser):
         "-p",
         "--path",
         default="",
-        help="Path(s) to file(s) that are needed for creating the workload. Not required for docker-registry workloads. Multiple files can be specified by separating them with a comma. Wildcards are supported. (e.g. nerve-ds/*.tar,nerve-ds/*.yml)",
+        help="Path(s) to file(s) that are needed for creating the workload. Multiple files can be specified by separating them with a comma. Wildcards are supported. (e.g. nerve-ds/*.tar,nerve-ds/*.yml)",
     )
 
 
@@ -104,7 +106,8 @@ def workload_create(ms_workloads, work_dir, arg, log=None):
         if args.template == "docker":
             file_paths = ["nginx.tar.gz"]
         if args.template == "registry":
-            file_paths = ["arvindr226/alpine-ssh"]
+            # TODO: Implement registry template
+            raise NotImplementedError("Registry template is not implemented yet.")
         if args.template == "vm":
             file_paths = ["slitaz_small.qcow2", "slitaz_small.qcow2.xml"]
             networks = [{"type": "Bridged", "interface": "isolated1"}]
