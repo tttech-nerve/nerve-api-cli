@@ -1,6 +1,6 @@
 [project]
 name = "nerve_cli"
-version = "0.1.0"
+version = "1.0.0"
 description = "Nerve API examples CLI tool"
 authors = [
     {name = "Nerve Development Team",email = "dev@nerve.cloud"}
@@ -10,7 +10,7 @@ requires-python = ">=3.9,<4.0"
 
 
 dependencies = [
-    "nerve-lib @ git+https://github.com/tttech-nerve/nerve-api-python.git",
+    "nerve-lib @ git+https://github.com/tttech-nerve/nerve-api-python.git@v1.0.0",
 ]
 
 
