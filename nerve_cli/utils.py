@@ -36,7 +36,7 @@ def check_filter_arg(cmd_line_filter, data_value):
     """Check if the argument is a filter and return the filter.
     If cmd_line_filter is not defined, return True."""
 
-    if cmd_line_filter == "" or cmd_line_filter is None:
+    if not cmd_line_filter:
         return True
     ret_val = False
 
@@ -52,7 +52,6 @@ def check_filter_arg(cmd_line_filter, data_value):
         else:
             ret_val = cmd_line_filter == data_value
 
-        _log.debug("Filtering data '%s' with filter '%s' -> %s", data_value, cmd_line_filter, ret_val)
     return ret_val
 
 
@@ -116,15 +115,17 @@ def file_read(work_dir, file_name):
         file_name += ".json"
         file_ext = ".json"
     file_path = posixpath.join(work_dir, file_name)
-    _log.debug("Reading file: %s", file_path)
     if not os.path.exists(file_path):
+        _log.error("File '%s' does not exist", file_path)
         return None
+    _log.debug("Reading file: %s", file_path)
     with open(file_path, "r", encoding="utf-8") as file:
         if file_ext == ".json":
             return json.load(file)
         if file_ext in {".yaml", ".yml"}:
             return yaml.safe_load(file)
         return file.read()
+
 
 def clean_wl_definition(wl_def):
     """Clean the workload definition by removing provision specific elements."""
@@ -137,6 +138,7 @@ def clean_wl_definition(wl_def):
         "overall_size",
         "summarizedFileStatuses",
         "numberOfServices",
+        "export",
     ]
     if not isinstance(wl_def, dict):
         return wl_def

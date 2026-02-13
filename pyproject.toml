@@ -1,24 +1,24 @@
 [project]
 name = "nerve_cli"
-version = "1.0.0"
+version = "1.1.0"
 description = "Nerve API examples CLI tool"
 authors = [
     {name = "Nerve Development Team",email = "dev@nerve.cloud"}
 ]
 readme = "README.md"
-requires-python = ">=3.9,<4.0"
+requires-python = ">=3.10,<4.0"
 
 
 dependencies = [
-    "nerve-lib @ git+https://github.com/tttech-nerve/nerve-api-python.git@v1.0.0",
+    "nerve-lib @ git+https://github.com/tttech-nerve/nerve-api-python.git@v1.1.0",
 ]
 
 
 [tool.poetry.group.dev.dependencies]
-pytest = "^8.3.4"
-ruff = "^0.9.9"
+pytest = ">=9.0.0,<10.0.0"
+ruff = "<1.0.0"
 hypothesis = "^6.127.3"
-pytest-cov = "^6.0.0"
+pytest-cov = ">=7.0.0,<8.0.0"
 
 [project.scripts]
 nerve-cli = "nerve_cli:main"
@@ -26,7 +26,6 @@ nerve-cli = "nerve_cli:main"
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]
 build-backend = "poetry.core.masonry.api"
-
 [tool.coverage.run]
 branch = true
 source = ["nerve_cli"]

@@ -22,9 +22,9 @@
 
 import json
 import logging
-import webbrowser
 import os
 import subprocess
+import webbrowser
 
 from .utils import args_interactive
 from .utils import file_read
@@ -117,7 +117,7 @@ def find_in_remotes_list(remote_element, remotes_list):
     return {}
 
 
-def nodes_remote_connections(ms_nodes, work_dir, arg, log=None):
+def nodes_remote_connections(ms_nodes, work_dir, arg, log=None):  # noqa: PLR0912
     if not log:
         log = logging.getLogger(__name__)
     args = args_interactive(
@@ -205,10 +205,10 @@ def nodes_remote_connections(ms_nodes, work_dir, arg, log=None):
                         tunnels_to_add[node_name] = []
                     tunnels_to_add[node_name].append(tunnel)
         log.info("Adding following remote_connections: \n%s", json.dumps(tunnels_to_add, indent=4))
-        for node_name in tunnels_to_add:
+        for node_name, remote_connection in tunnels_to_add.items():
             serial_number = next(node["serialNumber"] for node in nodes if node["name"] == node_name)
             node_handle = ms_nodes.Node(serial_number)
-            node_handle.add_remote_connection(tunnels_to_add[node_name])
+            node_handle.add_remote_connection(remote_connection)
     if args.delete:
         nodes = file_read(work_dir, args.file)
         existing_remotes = get_existing_remotes(ms_nodes, nodes)
@@ -227,10 +227,10 @@ def nodes_remote_connections(ms_nodes, work_dir, arg, log=None):
                         tunnels_to_remove[node_name] = []
                     tunnels_to_remove[node_name].append(remote_element)
         log.info("Removing following remote connections: \n%s", json.dumps(tunnels_to_remove, indent=4))
-        for node_name in tunnels_to_remove:
+        for node_name, remote_connection in tunnels_to_remove.items():
             serial_number = next(node["serialNumber"] for node in nodes if node["name"] == node_name)
             node_handle = ms_nodes.Node(serial_number)
-            node_handle.remove_remote_connection(tunnels_to_remove[node_name])
+            node_handle.remove_remote_connection(remote_connection)
     if args.establish:
         nodes = file_read(work_dir, args.file)
         remotes = file_read(work_dir, args.remotes_file)
@@ -249,10 +249,9 @@ def nodes_remote_connections(ms_nodes, work_dir, arg, log=None):
                 log.info("Establishing remote connection for node %s: %s", node["name"], remote["name"])
                 node_handle = ms_nodes.Node(node["serialNumber"])
                 url = node_handle.get_remote_connections(remote["name"])
-                
+
                 # if os is linux use call "xdg-open" with url instead
                 if os.name == "posix":
                     subprocess.call(["xdg-open", url])
                 else:
                     webbrowser.open(url, new=0, autoraise=True)
-                

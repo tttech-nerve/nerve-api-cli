@@ -25,9 +25,9 @@ import posixpath
 from pathlib import Path
 
 from .utils import args_interactive
+from .utils import clean_wl_definition
 from .utils import file_read
 from .utils import file_write
-from .utils import clean_wl_definition
 
 
 def args_workload_create(parser):
@@ -48,9 +48,7 @@ def args_workload_create(parser):
         "-t",
         "--template",
         help="Create a workload template and write it to the 'file'.",
-        # choices=["docker", "registry", "codesys", "vm", "docker-compose"],
-        # TODO: Add registry template when implemented
-        choices=["docker", "codesys", "vm", "docker-compose"],
+        choices=["docker", "registry", "codesys", "vm", "docker-compose"],
     )
 
     action_group.add_argument(
@@ -64,12 +62,13 @@ def args_workload_create(parser):
         "-p",
         "--path",
         default="",
-        help="Path(s) to file(s) that are needed for creating the workload. Multiple files can be specified by separating them with a comma. Wildcards are supported. (e.g. nerve-ds/*.tar,nerve-ds/*.yml)",
+        help="Path(s) to file(s) that are needed for creating the workload. Not required for docker-registry workloads. Multiple files can be specified by separating them with a comma. Wildcards are supported. (e.g. nerve-ds/*.tar,nerve-ds/*.yml)",
     )
 
 
 def workload_create(ms_workloads, work_dir, arg, log=None):
     """Create a single workload on the management system"""
+
     def create_individual_workload(wl):
         if type(wl) is not dict:
             raise TypeError("Workload definition must be a dictionary")
@@ -77,7 +76,7 @@ def workload_create(ms_workloads, work_dir, arg, log=None):
         search_pathes = [posixpath.join(work_dir, file_path) for file_path in args.path.split(",")]
         file_pathes = []
         for search_path in search_pathes:
-            file_pathes += [file_path.as_posix() for file_path in Path.cwd().glob(search_path)]
+            file_pathes += sorted([file_path.as_posix() for file_path in Path.cwd().glob(search_path)])
         log.debug("Working with file pathes: \n    - %s", "\n    - ".join(file_pathes))
         wl = clean_wl_definition(wl)
         ms_workloads.provision_workload(wl, file_pathes, api_version)
@@ -106,8 +105,7 @@ def workload_create(ms_workloads, work_dir, arg, log=None):
         if args.template == "docker":
             file_paths = ["nginx.tar.gz"]
         if args.template == "registry":
-            # TODO: Implement registry template
-            raise NotImplementedError("Registry template is not implemented yet.")
+            file_paths = ["arvindr226/alpine-ssh"]
         if args.template == "vm":
             file_paths = ["slitaz_small.qcow2", "slitaz_small.qcow2.xml"]
             networks = [{"type": "Bridged", "interface": "isolated1"}]

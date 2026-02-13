@@ -33,6 +33,7 @@ from nerve_lib import MSLabel
 from nerve_lib import MSNode
 from nerve_lib import MSWorkloads
 from nerve_lib import setup_logging
+from nerve_lib import CheckStatusCodeError
 
 from .labels import args_labels
 from .labels import labels
@@ -40,6 +41,8 @@ from .ms_workloads import args_ms_workloads
 from .ms_workloads import ms_workloads
 from .nodes_dna import args_nodes_dna
 from .nodes_dna import nodes_dna
+from .service_os_dna import args_service_os_dna
+from .service_os_dna import service_os_dna
 from .nodes_list import args_nodes_list
 from .nodes_list import nodes_list
 from .nodes_reboot import args_nodes_reboot
@@ -52,6 +55,11 @@ from .workload_create import args_workload_create
 from .workload_create import workload_create
 
 
+
+setup_logging(compact = True)# format_string="{levelname:<7} :: {message}")
+cli_log = logging.getLogger("NerveCLI")
+
+
 class NerveCLI(cmd.Cmd):
     intro = "Welcome to the nerve_lib CLI. Type help or ? to list commands.\n"
     prompt = "(nerve) "
@@ -59,7 +67,6 @@ class NerveCLI(cmd.Cmd):
     def __init__(self, ms_url="", ms_user="", ms_password="", work_dir="work_dir", log_level="INFO"):
         super().__init__()
 
-        setup_logging()
         self._log = logging.getLogger("NerveCLI")
         self.do_log_level(log_level)
 
@@ -69,9 +76,6 @@ class NerveCLI(cmd.Cmd):
 
         if self.ms_url:
             self.ms = MSHandle(self.ms_url, self.ms_user, self.ms_password)
-            self.ms.login = self._login_decorator(self.ms.login)
-
-            self._set_session()
         else:
             # usage of MS handle will lead to an error if no MS URL is provided
             # Error is only raised when MS actually needs be be used, function not requiring this call (e.g. to create templates)
@@ -83,7 +87,8 @@ class NerveCLI(cmd.Cmd):
                 # any function call not defined shall lead to an error
                 def __getattr__(self, _name):
                     raise ValueError(
-                        "No MS URL provided. Please provide the MS URL in the environment variable MS_URL or as an argument."
+                        "No MS URL provided. Please provide the MS URL in the environment"
+                        " variable MS_URL or as an argument."
                         "If a credentials.ini file exists with only one section, the MS will be set to this."
                     )
             self.ms = FakeCallMS()
@@ -122,51 +127,17 @@ class NerveCLI(cmd.Cmd):
             elif (not os.environ.get("MS_USR") and not ms_user) or (
                 not os.environ.get("MS_PSW") and not ms_password
             ):
-                session_config = configparser.ConfigParser()
-                session_config.read("session.ini")
-                if self.ms_url not in session_config.sections():
-                    self._log.warning(
-                        "No credentials provided for MS. Please provide credentials in the environment variables MS_USR and MS_PSW"
-                        " or in the credentials.ini file."
-                    )
+                self._log.warning(
+                    "No credentials provided for MS. Please provide credentials in the environment"
+                    " variables MS_USR and MS_PSW or in the credentials.ini file."
+                )
             else:
                 self._log.debug("Using credentials from environment variables for %s", self.ms_url)
+                ms_user = os.environ.get("MS_USR")
+                ms_password = os.environ.get("MS_PSW")
 
         self.ms_user = ms_user
         self.ms_password = ms_password
-
-    def _set_session(self):
-        config = configparser.ConfigParser()
-        config.read("session.ini")
-        if self.ms_url in config.sections():
-            self._log.debug("Using sessionid from session.ini for %s", self.ms_url)
-            self.ms._add_header["sessionid"] = config[self.ms_url]["sessionid"]
-            self.ms._add_cookies = json.loads(config[self.ms_url]["cookies"])
-            return True
-        elif not self.ms.usr and not self.ms.psw:
-            raise ValueError(
-                "Please define either login credentials or a sessionid in the session.ini file."
-            )
-
-    def _login_decorator(self, func):
-        def wrapper(*args, **kwargs):
-            # Call the original ms.login method
-            response = func(*args, **kwargs)
-
-            # Code to execute after ms.login
-            config = configparser.ConfigParser()
-            config.read("session.ini")
-            # Store the session ID and cookies in session.ini
-            session_id = f"{response.headers['sessionId']}"
-            cookies = response.cookies.get_dict()
-            config[self.ms_url] = {"sessionid": session_id, "cookies": json.dumps(cookies)}
-            with open("session.ini", "w", encoding="utf-8") as configfile:
-                config.write(configfile)
-            self.ms._add_cookies = cookies
-            self._log.info("Session ID and cookies stored in session.ini")
-            return response
-
-        return wrapper
 
     def do_log_level(self, arg):
         """Set the log-level (DEBUG, INFO, WARNING, ERROR, CRITICAL)."""
@@ -218,6 +189,12 @@ class NerveCLI(cmd.Cmd):
 
         Addtional options are listed with -h/--help."""
         nodes_dna(self.ms_nodes, self.work_dir, arg)
+
+    def do_service_os_dna(self, arg):
+        """Nodes DNA functions.
+
+        Addtional options are listed with -h/--help."""
+        service_os_dna(self.ms_nodes, self.work_dir, arg)
 
     def do_nodes_workloads_state(self, arg):
         """Change the state of all workloads listed in the nodes file.
@@ -281,6 +258,11 @@ def main():
         type=str,
         choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
     )
+    parser.add_argument(
+        "--store_credentials",
+        action="store_true",
+        help="Store the provided credentials in the credentials.ini file for future use",
+    )
 
     main_subparser = parser.add_subparsers(help="Available sub-commands:")
 
@@ -321,6 +303,11 @@ def main():
     args_nodes_dna(subparser)
     subparser.set_defaults(func="nodes_dna")
 
+    # service_os_dna
+    subparser = main_subparser.add_parser("service_os_dna", help="Service OS DNA functions")
+    args_service_os_dna(subparser)
+    subparser.set_defaults(func="service_os_dna")
+
     # nodes_workloads_state
     subparser = main_subparser.add_parser(
         "nodes_workloads_state", help="Change the state of all workloads listed in the nodes file"
@@ -346,9 +333,23 @@ def main():
         sys.exit(0)
 
     args = parser.parse_args()
+
+    if args.store_credentials:
+        config = configparser.ConfigParser()
+        config.read("credentials.ini")
+        if args.ms_url not in config.sections():
+            config[args.ms_url] = {}
+        if args.ms_user:
+            config[args.ms_url]["username"] = args.ms_user
+        if args.ms_password:
+            config[args.ms_url]["password"] = args.ms_password
+        with open("credentials.ini", "w") as configfile:
+            config.write(configfile)
+        cli_log.info(f"Credentials for {args.ms_url} stored in credentials.ini")
+
     if not hasattr(args, "func"):
         raise SystemExit("No sub-command specified")
-
+    
     try:
         cli = NerveCLI(args.ms_url, args.ms_user, args.ms_password, args.work_dir, args.log_level)
         if "workload_create" == args.func:
@@ -361,6 +362,8 @@ def main():
             cli.do_nodes_reboot(args)
         if "nodes_dna" == args.func:
             cli.do_nodes_dna(args)
+        if "service_os_dna" == args.func:
+            cli.do_service_os_dna(args)
         if "nodes_workloads_state" == args.func:
             cli.do_nodes_workloads_state(args)
         if "nodes_remote_connections" == args.func:
@@ -369,41 +372,40 @@ def main():
             cli.do_labels(args)
         if "logout" == args.func:
             cli.do_logout()
-    except Exception as e:
+    except Exception as ex_msg:
         error = {
             "dns": "Name or service not known",
-            "provide_credentials": "Please define either login credentials or a sessionid in the session.ini",
             "404": "404 Not Found",
             "invalid_credentials": "Invalid credentials",
+            "provide_credentials": "No username/password provided for MS login",
+            "no_ms_url": "No MS URL provided.",
         }
         emsg = "An error occured: "
         print_trace = False
-        if isinstance(e, requests.exceptions.ConnectionError):
-            if error["dns"] in str(e):
+        if isinstance(ex_msg, requests.exceptions.ConnectionError):
+            if error["dns"] in str(ex_msg):
                 emsg = "The URL of the Management System could not be resolved"
             else:
-                emsg = f"Failed to connect to Management System: {e}"
-        elif isinstance(e, ValueError):
-            if error["provide_credentials"] in str(e):
-                emsg = error["provide_credentials"]
+                emsg = f"Failed to connect to Management System: {ex_msg}"
+        elif isinstance(ex_msg, ValueError):
+            for err_key in ["provide_credentials", "no_ms_url"]:
+                if error[err_key] in str(ex_msg):
+                    emsg = str(ex_msg)
+                    break
             else:
                 print_trace = True
-        elif error["404"] in str(e):
+        elif error["404"] in str(ex_msg):
             emsg = "The URL either does not exist or it does not point to a Nerve Management System"
-        elif error["invalid_credentials"] in str(e):
+        elif error["invalid_credentials"] in str(ex_msg):
             emsg = "Failed to authorize (invalid credentials). Please check your credentials"
+        elif isinstance(ex_msg, CheckStatusCodeError):
+            pass  # do not print trace for status code errors
         else:
             print_trace = True
 
-        if 'cli' in locals():
-            cli._log.error(emsg)
-        else:
-            sys.stderr.write(emsg + "\n")
+        cli_log.error(emsg)
         if print_trace:
-            import traceback
-            traceback.print_exc()
-        sys.exit(1)
-
+            cli_log.exception(ex_msg)
 
     if "cli" == args.func:
         try:

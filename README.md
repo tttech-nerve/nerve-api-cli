@@ -9,7 +9,7 @@ The *Nerve API CLI* provides a command line interface to the REST API of a [Nerv
 
 ## Installation
 
-The scripts have been developed and tested with Python 3.9+, and it is recommended to run them with Python 3.9 or later. 
+The scripts have been developed and tested with Python 3.10+, and it is recommended to run them with Python 3.10 or later. 
 
 > Note that the instructions below are for Linux operating systems. For information on how to create a virtual environment on Windows, please refer to [the official Python documentation](https://python.land/virtual-environments/virtualenv#How_to_create_a_Python_venv).
 
@@ -106,10 +106,9 @@ management system, but the passwords will be retrieved from the `credentials.ini
 Run `poetry run nerve-cli --help` to get detailed information about all available commands.
 
 When the credentials are defined, any command can be run without performing a login upfront. The [*nerve_lib*](https://github.com/tttech-nerve/nerve-api-python.git) will automatically detect if a new login is required and use the 
-provided credentials if needed. The CLI-tool saves the session_id in addition to a file (`session.ini`), hence the session will be used also after multiple executions of the 
-application. Performing a logout with `poetry run nerve-cli logout` will not remove the session-id from the file, but the session-id is invalid and the next command will create a new session-id as a new login will be performed. 
+provided credentials if needed.
 
-When a login is triggered can be notices in the command line output when the debug mode is activated `poetry run nerve-cli -l DEBUG`. 
+When a login is triggered can be notices in the command line output when the debug mode is activated `poetry run nerve-cli --log_level DEBUG`. 
 
 
 For example it is possible to perform operations on the Management System such as listing all the Docker workloads that are available on the Management System:
