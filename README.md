@@ -1,8 +1,8 @@
 <p align="center" style='font-size: 12px; font-family: "Monaco";'>
     <img src="./img/logo-nerve-black.svg" alt="Nerve"/><b>&nbsp;API CLI</b><br><br>
     <a href="./LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg"/></a>
-    <a href="https://docs.python.org/3/"><img src="https://img.shields.io/badge/python-3.9%20%7C%203.10%20%7C%203.11%20%7C%203.12%20%7C%203.13-blue.svg"/></a>
-    <a href="https://docs.nerve.cloud"><img src="https://img.shields.io/badge/nerve-2.9%20%7C%202.10%20%7C%203.0-blue.svg"/></a>
+    <a href="https://docs.python.org/3/"><img src="https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12%20%7C%203.13%20%7C%203.14-blue.svg"/></a>
+    <a href="https://docs.nerve.cloud"><img src="https://img.shields.io/badge/nerve-2.9%20%7C%202.10%20%7C%203.0%20%7C%203.1-blue.svg"/></a>
 </p>
 
 The *Nerve API CLI* provides a command line interface to the REST API of a [Nerve Management System](https://docs.nerve.cloud). It is essentially a command line wrapper for some parts of the [*nerve_lib*](https://github.com/tttech-nerve/nerve-api-python) and can be used to integrate *Nerve* related workflows into a build pipeline and automate common tasks such as workload creation and deployment. Since the CLI does only cover a subset of functions provided by the *[*nerve_lib*](https://github.com/tttech-nerve/nerve-api-python.git)* please refer to the library directly if additional flexibility or functionality is needed.
