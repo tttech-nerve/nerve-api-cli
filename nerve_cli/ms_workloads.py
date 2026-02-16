@@ -20,14 +20,17 @@
 
 """Function for listing workloads"""
 
+import gzip
 import logging
 import os
-import requests
+import shutil
+import tarfile
 from copy import deepcopy
 from datetime import datetime
 
 from .utils import args_interactive
 from .utils import check_filter_arg
+from .utils import clean_wl_definition
 from .utils import file_read
 from .utils import file_write
 
@@ -91,6 +94,14 @@ def args_ms_workloads(parser):
         metavar="FILTER",
         help="Filter Workloads with version date older than the given value (date in format 'YYYY-MM-DD').",
     )
+    filter_args.add_argument(
+        "--version_list_filter",
+        metavar="<start>:<end>",
+        help=(
+            "Filter workload versions (sorted by creation date) to be listed by providing a range similar to list slicing in Python."
+            " E.g., '0:5' lists the first 5 versions, '-5:' the last 5 versions, '3' the 4th version only."
+        ),
+    )
 
     deploy_args = parser.add_argument_group("Optional arguments for workloads deployment")
     deploy_args.add_argument(
@@ -104,12 +115,20 @@ def args_ms_workloads(parser):
     required_group = parser.add_argument_group("Mutually exclusive arguments for action")
     action_group = required_group.add_mutually_exclusive_group(required=True)
     action_group.add_argument(
-        "-l", "--list", help="List the workloads (and versions) and store results to 'file'", action="store_true"
+        "-l",
+        "--list",
+        help="List the workloads (and versions) and store results to 'file'",
+        action="store_true",
     )
     action_group.add_argument(
         "-c",
         "--copy",
-        help="Downloads the workload version, storing the workload definitions to 'file' and the workload files to 'path'",
+        help=(
+            "Downloads the workload version, storing the workload definitions to"
+            " 'file' (similar to --list). Within <path>/<workload_name>/<version_name>/ a wl_def.json"
+            " and all associated files are stored (untarred and un-gzipped as needed) where <path>"
+            " is the value provided to the --path argument."
+        ),
         action="store_true",
     )
     action_group.add_argument(
@@ -123,7 +142,7 @@ def args_ms_workloads(parser):
     )
 
 
-def _ms_workloads_copy(ms_workloads, work_dir, args, wl_name, filtered_versions, log=None):
+def _ms_workloads_copy(ms_workloads, work_dir, args, wl_name, filtered_versions, log):
     def create_ms_workloads_path(work_dir, path):
         """Create the path for storing the workloads files."""
         if not path:
@@ -136,65 +155,99 @@ def _ms_workloads_copy(ms_workloads, work_dir, args, wl_name, filtered_versions,
     if not filtered_versions:
         return
 
-    create_ms_workloads_path(work_dir, args.path)
-
     # retrieve all workload version details and overwrite the filtered versions
     for i, version in enumerate(filtered_versions):
-        detailed_version = (
-            ms_workloads.WorkloadVersion(wl_name, version["name"], version.get("releaseName"))
-            .get_container()
-            .get("versions")[0]
-        )
+        container = ms_workloads.WorkloadVersion(
+            wl_name, version["name"], version.get("releaseName")
+        ).get_container()
+        detailed_version = container.get("versions")[0]
         filtered_versions[i] = detailed_version
 
-        for file in detailed_version.get("files", []):
-            file_path = file.get("path")
-            if not file_path:
-                continue
+        save_path = os.path.join(args.path, wl_name, version["name"])
+        create_ms_workloads_path(work_dir, save_path)
 
-            # Use the version export function from manage_workloads
-            wl_version = ms_workloads.WorkloadVersion(wl_name, version["name"], version.get("releaseName"))
-            response = wl_version.export_workload_version()
-            if not response:
-                if log:
-                    log.error(f"Failed to export workload version: {version['name']}")
-                continue
+        file_write(os.path.join(work_dir, save_path), "wl_def.json", container)
 
-            if response.status_code == requests.codes.ok:
-                file_name = file.get('originalName') or os.path.basename(file_path)
+        wl_version = ms_workloads.WorkloadVersion(wl_name, version["name"], version.get("releaseName"))
+        response = wl_version.export_workload_version()
+        file_name = (
+            response.headers.get("Content-Disposition", "attachment; filename=workload_file")
+            .split("filename=")[-1]
+            .strip('"')
+        )
 
-                # Handle file extensions, including cases like .tar.gz
-                base_name, ext = os.path.splitext(file_name)
-                if base_name.endswith('.tar'):
-                    base_name, tar_ext = os.path.splitext(base_name)
-                    ext = tar_ext + ext
+        destination_path = os.path.join(work_dir, save_path, file_name)
+        if os.path.exists(destination_path):
+            destination_path = os.path.join(work_dir, save_path, file_name)
 
-                # Check if the file already exists, append version ID if necessary
-                destination_path = os.path.join(work_dir, args.path, file_name)
-                if os.path.exists(destination_path):
-                    version_id = detailed_version.get("id")
-                    file_name = f"{base_name}_{version_id}{ext}"
-                    destination_path = os.path.join(work_dir, args.path, file_name)
+        # Save the file to the specified path in chunks to handle large files
+        with open(destination_path, "wb") as dest_file:
+            for chunk in response.iter_content(chunk_size=8192):  # Stream in 8KB chunks
+                if chunk:  # Filter out keep-alive new chunks
+                    dest_file.write(chunk)
+        log.info("Downloaded and saved file: %s", file_name)
+        # untar the file
+        files_contained = []
+        if file_name.endswith(".tar.gz") or file_name.endswith(".tgz"):
+            log.info("Extracting tar-gzipped file: %s (%s)", destination_path, file_name)
+            with tarfile.open(destination_path, "r:gz") as tar:
+                tar.extractall(path=os.path.join(work_dir, save_path))
+                files_contained = tar.getnames()
+            log.debug("Extracted files: %s", files_contained)
+        if file_name.endswith(".tar"):
+            with tarfile.open(destination_path, "r:") as tar:
+                tar.extractall(path=os.path.join(work_dir, save_path))
+                files_contained = tar.getnames()
+            log.debug("Extracted files: %s", files_contained)
+        os.remove(destination_path)
+        json_content = None
+        for file in files_contained:
+            if file.endswith(".gz"):
+                full_file_path = os.path.join(work_dir, save_path, file)
+                log.info("Extracting gzipped file: %s (%s)", full_file_path, file)
+                extracted_file = os.path.splitext(full_file_path)[0]
+                with gzip.open(full_file_path, "rb") as f_in:
+                    with open(extracted_file, "wb") as f_out:
+                        shutil.copyfileobj(f_in, f_out)
+                log.debug("Extracted gzipped file: %s", extracted_file)
+                os.remove(full_file_path)
+            if file.endswith(".json"):
+                log.info("JSON file included: %s", file)
+                json_content = file_read(os.path.join(work_dir, save_path), file)
+                wl_def_content = file_read(os.path.join(work_dir, save_path), "wl_def.json")
 
-                # If the file still exists, append the file ID
-                if os.path.exists(destination_path):
-                    file_id = file.get("id")
-                    file_name = f"{base_name}_{version_id}_{file_id}{ext}"
-                    destination_path = os.path.join(work_dir, args.path, file_name)
+                if json_content["type"] == "docker-compose":
+                    wl_def_content["versions"][0]["workloadSpecificProperties"] = json_content["version"].get(
+                        "workloadSpecific", [{}]
+                    )[0]
+                    wl_def_content["versions"][0]["selectors"] = json_content["version"].get("selectors", [])
+                    wl_def_content["versions"][0]["remoteConnections"] = json_content["version"].get(
+                        "remoteConnections", []
+                    )
 
-                # Save the file to the specified path in chunks to handle large files
-                with open(destination_path, "wb") as f:
-                    for chunk in response.iter_content(chunk_size=8192):  # Stream in 8KB chunks
-                        if chunk:  # Filter out keep-alive new chunks
-                            f.write(chunk)
-                if log:
-                    log.info(f"Downloaded and saved file: {file_name}")
-            else:
-                if log:
-                    log.error(f"Failed to download file: {file_path}. Status code: {response.status_code}")
+                file_write(
+                    os.path.join(work_dir, save_path), "wl_def.json", clean_wl_definition(wl_def_content)
+                )
+
+        if json_content:
+            for file_info in json_content["version"].get("files", []):
+                name = (
+                    file_info["name"].rsplit(".gz", 1)[0]
+                    if file_info["name"].endswith(".gz")
+                    else file_info["name"]
+                )
+                original_name = file_info["originalName"]
+                # move file with name to original name
+                if name and original_name and name != original_name:
+                    if os.path.exists(os.path.join(work_dir, save_path, name)):
+                        os.rename(
+                            os.path.join(work_dir, save_path, name),
+                            os.path.join(work_dir, save_path, original_name),
+                        )
+                        log.info("Renamed file %s to %s", name, original_name)
 
 
-def _ms_workloads_list(ms_workloads, work_dir, args, log=None, copy=None):
+def _ms_workloads_list(ms_workloads, work_dir, args, log=None, copy=None):  # noqa: PLR0915
     def filter_versions(workload, args):
         versions = workload["versions"]
         versions = [v for v in versions if check_filter_arg(args.version_name, v["name"])]
@@ -241,10 +294,38 @@ def _ms_workloads_list(ms_workloads, work_dir, args, log=None, copy=None):
                     result_versions.append(wl_version)
             versions = deepcopy(result_versions)
 
+        if args.version_list_filter:
+            # sort versions by createdAt date descending
+            versions_sorted = sorted(
+                versions,
+                key=lambda v: datetime.strptime(v["createdAt"], "%Y-%m-%dT%H:%M:%S.%fZ"),
+                reverse=False,
+            )
+            # apply slicing
+            try:
+                slice_parts = args.version_list_filter.split(":")
+                if len(slice_parts) == 2:  # noqa: PLR2004
+                    start = int(slice_parts[0]) if slice_parts[0] else None
+                    end = int(slice_parts[1]) if slice_parts[1] else None
+                    versions = versions_sorted[start:end]
+                elif len(slice_parts) == 1:
+                    index = int(slice_parts[0])
+                    versions = [versions_sorted[index]]
+                else:
+                    raise ValueError("Invalid version_list_filter format.")
+            except Exception:
+                raise ValueError("Invalid version_list_filter format.")
+
         return versions
 
     def human_readable_output(versions):
-        log.info("%s Workload '%s' (%s):", wl_type, wl_name, wl_id)
+        log.info(
+            "%s%s Workload '%s' (%s):",
+            wl_type,
+            " (internal registry)" if wl_internal_registry else "",
+            wl_name,
+            wl_id,
+        )
 
         for wl_version in versions:
             v_name = wl_version["name"]
@@ -275,7 +356,7 @@ def _ms_workloads_list(ms_workloads, work_dir, args, log=None, copy=None):
                     container_name_str = f" Container name: '{wl_version['workloadSpecificProperties'].get('container_name', '')}'"
 
             log.info(
-                "Version %s (%s)%s",
+                "    Version %s (%s)%s",
                 version_str,
                 version_size_str,
                 container_name_str,
@@ -286,7 +367,7 @@ def _ms_workloads_list(ms_workloads, work_dir, args, log=None, copy=None):
 
     # get full list of all workloads
     wl_list = ms_workloads.get_workloads_dict(
-        read_versions=True, read_compose_details=False, compact_dict=False
+        read_versions=True, read_compose_details=True, compact_dict=False
     )
 
     # apply workload level filters
@@ -306,6 +387,8 @@ def _ms_workloads_list(ms_workloads, work_dir, args, log=None, copy=None):
         if not args.disabled:
             if check_filter_arg(True, workload["disabled"]):
                 continue
+
+        wl_internal_registry = workload.get("internalDockerRegistry", False)
 
         # apply version level filters
         filtered_versions = filter_versions(workload, args)
@@ -377,7 +460,7 @@ def _ms_workloads_deploy(ms_workloads, ms_nodes, work_dir, args, log=None):
             wl_version.deploy(node_list)
 
 
-def ms_workloads(ms_workloads, ms_nodes, work_dir, arg, log=None):  # noqa: PLR0914
+def ms_workloads(ms_workloads, ms_nodes, work_dir, arg, log=None):
     if not log:
         log = logging.getLogger(__name__)
     args = args_interactive(

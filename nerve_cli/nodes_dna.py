@@ -70,6 +70,11 @@ def args_nodes_dna(parser):
         action="store_true",
         help="Continue DNA deployment in case node restarts",
     )
+    deploy_group.add_argument(
+        "--remove_docker_images",
+        action="store_true",
+        help="Remove unused Docker images before the DNA file is applied",
+    )
 
     commands_args = parser.add_mutually_exclusive_group(required=True)
 
@@ -81,15 +86,25 @@ def args_nodes_dna(parser):
     commands_args.add_argument(
         "--get_current",
         action="store_true",
-        help="Get the current DNA configuration from the first node in 'file' (stored to 'dna-file')",
+        help="Get the current DNA configuration from all nodes in 'file' (stored to '<node_serial>/*.json')",
     )
     commands_args.add_argument(
         "--get_target",
         action="store_true",
-        help="Get the target DNA configuration from the first node in 'file' (stored to 'dna-file')",
+        help="Get the target DNA configuration from all nodes in 'file' (stored to '<node_serial>/*.json')",
     )
     commands_args.add_argument(
         "--status", action="store_true", help="Get the DNA status of all nodes in 'file'"
+    )
+    commands_args.add_argument(
+        "--cancel",
+        action="store_true",
+        help="Cancel the DNA target deployment on the nodes in 'file'",
+    )
+    commands_args.add_argument(
+        "--re-apply",
+        action="store_true",
+        help="Re-apply the target DNA configuration on the nodes in 'file'",
     )
 
 
@@ -154,5 +169,12 @@ def nodes_dna(ms_nodes, work_dir, arg, log=None):
                 ("config.zip", zip_bin),
                 continue_after_restart=args.continue_after_restart,
                 restart_all_wl=args.restart_all_workloads,
+                remove_docker_images=args.remove_docker_images,
             )
             log.info("DNA configuration deployed to node %s", node["name"])
+        if args.cancel:
+            dna.cancel_target()
+            log.info("DNA target deployment cancelled on node %s", node["name"])
+        if args.re_apply:
+            dna.reapply_target()
+            log.info("DNA target re-apply triggered on node %s", node["name"])

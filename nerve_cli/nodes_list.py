@@ -155,7 +155,7 @@ def args_nodes_list(parser):
     )
 
 
-def nodes_list(ms_nodes, work_dir, arg, log=None):
+def nodes_list(ms_nodes, work_dir, arg, log=None):  # noqa: PLR0914
     if not log:
         log = logging.getLogger(__name__)
     args = args_interactive(arg, args_nodes_list, "List nodes and create a node list or add to the list")
@@ -177,7 +177,7 @@ def nodes_list(ms_nodes, work_dir, arg, log=None):
         node_info = ms_nodes.Node(node["serialNumber"])
         node_details = node_info.get_details()
 
-        node["model"] = node_details["model"]
+        node["model"] = node_details.get("model", "N/A")
         if not check_filter_arg(args.node_model, node["model"]):
             continue
 
