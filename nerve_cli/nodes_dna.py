@@ -1,4 +1,4 @@
-# Copyright (c) 2024 TTTech Industrial Automation AG.
+# Copyright (c) 2026 TTTech Industrial Automation AG.
 #
 # ALL RIGHTS RESERVED.
 # Usage of this software, including source code, netlists, documentation,
@@ -114,15 +114,14 @@ def strip_hash_from_dna_config(dna_config):
             workload.pop("hash", None)
 
 
-def nodes_dna(ms_nodes, work_dir, arg, log=None):
-    if not log:
-        log = logging.getLogger(__name__)
+def nodes_dna(ms_nodes, arg, log=None):
+    log = log.getChild(__name__.split(".")[-1]) if log else logging.getLogger(__name__)
     args = args_interactive(arg, args_nodes_dna, "DNA file exchange to nodes")
     if not args:
-        return
-    # Process the arguments as needed
+        log.error("Failed to parse arguments")
+        return 2
 
-    nodes = file_read(work_dir, args.file)
+    nodes = file_read(args.work_dir, args.file)
     for node in nodes:
         dna = MSDNA(ms_nodes.ms, node["serialNumber"])
         if args.get_current:
@@ -130,7 +129,7 @@ def nodes_dna(ms_nodes, work_dir, arg, log=None):
             if args.strip_hash:
                 strip_hash_from_dna_config(dna_config)
             for file_name, content in dna_config.items():
-                file_write(posixpath.join(work_dir, node["serialNumber"]), file_name, content)
+                file_write(posixpath.join(args.work_dir, node["serialNumber"]), file_name, content)
             log.info(
                 "Current DNA configuration of node %s:\n%s",
                 node["name"],
@@ -141,7 +140,7 @@ def nodes_dna(ms_nodes, work_dir, arg, log=None):
             if args.strip_hash:
                 strip_hash_from_dna_config(dna_config)
             for file_name, content in dna_config.items():
-                file_write(posixpath.join(work_dir, node["serialNumber"]), file_name, content)
+                file_write(posixpath.join(args.work_dir, node["serialNumber"]), file_name, content)
             log.info(
                 "Target DNA configuration of node %s:\n%s",
                 node["name"],
@@ -160,7 +159,7 @@ def nodes_dna(ms_nodes, work_dir, arg, log=None):
             zip_bin = BytesIO()
             with ZipFile(zip_bin, "w") as zip_object:
                 for file_name in args.put_target.split(","):
-                    file = file_read(work_dir, file_name)
+                    file = file_read(args.work_dir, file_name)
                     if isinstance(file, dict):
                         file = yaml.dump(file, indent=4, default_flow_style=False)
                     zip_object.writestr(os.path.basename(file_name), file)
@@ -178,3 +177,5 @@ def nodes_dna(ms_nodes, work_dir, arg, log=None):
         if args.re_apply:
             dna.reapply_target()
             log.info("DNA target re-apply triggered on node %s", node["name"])
+
+    return 0

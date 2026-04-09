@@ -1,4 +1,4 @@
-# Copyright (c) 2024 TTTech Industrial Automation AG.
+# Copyright (c) 2026 TTTech Industrial Automation AG.
 #
 # ALL RIGHTS RESERVED.
 # Usage of this software, including source code, netlists, documentation,
@@ -27,9 +27,10 @@ import os
 import posixpath
 import re
 
+import docker
 import yaml
 
-_log = logging.getLogger("cli_utils")
+_log = logging.getLogger("CLI.utils")
 
 
 def check_filter_arg(cmd_line_filter, data_value):
@@ -41,9 +42,7 @@ def check_filter_arg(cmd_line_filter, data_value):
     ret_val = False
 
     if cmd_line_filter:
-        if isinstance(cmd_line_filter, bool):
-            ret_val = cmd_line_filter == data_value
-        elif isinstance(cmd_line_filter, int):
+        if isinstance(cmd_line_filter, (bool, int)):
             ret_val = cmd_line_filter == data_value
         elif cmd_line_filter.startswith("regex:"):
             if isinstance(data_value, str):
@@ -59,18 +58,21 @@ def args_interactive(arg, add_args_function, description):
     parser = argparse.ArgumentParser(description=description, prog="")
     add_args_function(parser)
 
+    # For adding argument from initial start of cli
+    parser.add_argument("--ms_user", default="")
+    parser.add_argument("--ms_password", default="")
+    parser.add_argument("--work_dir", default="work_dir")
+
     try:
         known, _unknown = parser.parse_known_args(
             args=arg.split() if isinstance(arg, str) else None,
             namespace=arg if isinstance(arg, argparse.Namespace) else None,
         )
-        return known
     except SystemExit:
         if isinstance(arg, argparse.Namespace):
             raise
-        # Handle the case where the parser would normally exit
-        pass
-    return None
+    else:
+        return known
 
 
 def file_write(work_dir, file_name, content):
@@ -116,8 +118,7 @@ def file_read(work_dir, file_name):
         file_ext = ".json"
     file_path = posixpath.join(work_dir, file_name)
     if not os.path.exists(file_path):
-        _log.error("File '%s' does not exist", file_path)
-        return None
+        raise FileNotFoundError(f"File '{file_path}' does not exist")
     _log.debug("Reading file: %s", file_path)
     with open(file_path, "r", encoding="utf-8") as file:
         if file_ext == ".json":
@@ -139,6 +140,8 @@ def clean_wl_definition(wl_def):
         "summarizedFileStatuses",
         "numberOfServices",
         "export",
+        "updatedAt",
+        "numberOfFiles",
     ]
     if not isinstance(wl_def, dict):
         return wl_def
@@ -154,3 +157,61 @@ def clean_wl_definition(wl_def):
         else:
             _log.debug("Removing key '%s' from workload definition", k)
     return cleaned_def
+
+
+def docker_registry_workflow(work_dir, file_paths, repository, tag="latest"):
+    try:  # noqa: PLR1702
+        client = docker.from_env()
+        for file_path in file_paths:
+            if (
+                file_path.endswith((".tar", ".tar.gz"))
+                and file_path.split("/")[-1].split(".")[0] in repository
+            ):
+                with open(os.path.join(work_dir, file_path), "rb") as f:
+                    images = client.images.load(f.read())
+                    loaded_image = images[0]
+                    if loaded_image.tag(repository, tag=tag):
+                        _log.debug("Image tagged as %s:%s", repository, tag)
+                    prev_status = ""
+                    for line in client.images.push(repository, tag=tag, stream=True, decode=True):
+                        if prev_status != line.get("status"):
+                            _log.info(
+                                "%s:%s - %s %s",
+                                repository,
+                                tag,
+                                line.get("status", ""),
+                                line.get("progress", ""),
+                            )
+                            prev_status = line.get("status")
+                    client.images.remove(image=f"{repository}:{tag}", force=True)
+    except Exception as e:
+        _log.info("Make sure Docker is installed and running and you are logged in to the correct registry.")
+        _log.info(
+            "You can also try to push the image manually using 'docker load' and 'docker push' commands."
+        )
+        raise RuntimeError(f"Error occurred while processing Docker images: {e}")
+
+
+def format_size_string(size_bytes, fraction_digits=2):
+    """Format the size in bytes to a human-readable string."""
+    if size_bytes > 1024 * 1024 * 1024:
+        return f"{size_bytes / (1024 * 1024 * 1024):.{fraction_digits}f}GB"
+    if size_bytes > 1024 * 1024:
+        return f"{size_bytes / (1024 * 1024):.{fraction_digits}f}MB"
+    if size_bytes > 1024:  # noqa: PLR2004
+        return f"{size_bytes / 1024:.{fraction_digits}f}KB"
+    return f"{size_bytes}B"
+
+
+def size_string_to_bytes(size_str):
+    """Convert a human-readable size string to bytes."""
+    size_str = size_str.strip().upper()
+    if size_str.endswith("GB"):
+        return int(float(size_str[:-2]) * 1024 * 1024 * 1024)
+    if size_str.endswith("MB"):
+        return int(float(size_str[:-2]) * 1024 * 1024)
+    if size_str.endswith("KB"):
+        return int(float(size_str[:-2]) * 1024)
+    if size_str.endswith("B"):
+        return int(size_str[:-1])
+    raise ValueError(f"Invalid size string: {size_str}")

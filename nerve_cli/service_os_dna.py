@@ -1,4 +1,4 @@
-# Copyright (c) 2024 TTTech Industrial Automation AG.
+# Copyright (c) 2026 TTTech Industrial Automation AG.
 #
 # ALL RIGHTS RESERVED.
 # Usage of this software, including source code, netlists, documentation,
@@ -79,21 +79,20 @@ def args_service_os_dna(parser):
     )
 
 
-def service_os_dna(ms_nodes, work_dir, arg, log=None):
-    if not log:
-        log = logging.getLogger(__name__)
+def service_os_dna(ms_nodes, arg, log=None):
+    log = log.getChild(__name__.split(".")[-1]) if log else logging.getLogger(__name__)
     args = args_interactive(arg, args_service_os_dna, "ServiceOS DNA file exchange to nodes")
     if not args:
-        return
-    # Process the arguments as needed
+        log.error("Failed to parse arguments")
+        return 2
 
-    nodes = file_read(work_dir, args.file)
+    nodes = file_read(args.work_dir, args.file)
     for node in nodes:
         dna = ServiceOSDNA(ms_nodes.ms, node["serialNumber"])
         if args.get_current:
             dna_config = dna.get_current()
             file_write(
-                posixpath.join(work_dir, node["serialNumber"]), "current_service_os_dna.json", dna_config
+                posixpath.join(args.work_dir, node["serialNumber"]), "current_service_os_dna.json", dna_config
             )
             log.info(
                 "Current ServiceOS DNA configuration of node %s:\n%s",
@@ -103,7 +102,7 @@ def service_os_dna(ms_nodes, work_dir, arg, log=None):
         if args.get_target:
             dna_config = dna.get_target()
             file_write(
-                posixpath.join(work_dir, node["serialNumber"]), "target_service_os_dna.json", dna_config
+                posixpath.join(args.work_dir, node["serialNumber"]), "target_service_os_dna.json", dna_config
             )
             log.info(
                 "Target ServiceOS DNA configuration of node %s:\n%s",
@@ -120,7 +119,7 @@ def service_os_dna(ms_nodes, work_dir, arg, log=None):
                     dna_status = ex_msg.response_text
             log.info("ServiceOS DNA status of node '%25s': %s", node["name"], dna_status)
         if args.put_target:
-            file = file_read(work_dir, args.put_target)
+            file = file_read(args.work_dir, args.put_target)
             if file:
                 dna.put_target(file)
             log.info("ServiceOS DNA configuration deployed to node %s", node["name"])
@@ -130,3 +129,5 @@ def service_os_dna(ms_nodes, work_dir, arg, log=None):
         if args.re_apply:
             dna.reapply_target()
             log.info("ServiceOS DNA target re-apply triggered on node %s", node["name"])
+
+    return 0

@@ -1,4 +1,4 @@
-# Copyright (c) 2024 TTTech Industrial Automation AG.
+# Copyright (c) 2026 TTTech Industrial Automation AG.
 #
 # ALL RIGHTS RESERVED.
 # Usage of this software, including source code, netlists, documentation,
@@ -49,21 +49,21 @@ def args_nodes_workloads_state(parser):
     )
 
 
-def nodes_workloads_state(ms_nodes, work_dir, arg, log=None):
-    if not log:
-        log = logging.getLogger(__name__)
+def nodes_workloads_state(ms_nodes, arg, log=None):
+    log = log.getChild(__name__.split(".")[-1]) if log else logging.getLogger(__name__)
     args = args_interactive(
         arg,
         args_nodes_workloads_state,
         "Change the state of all workloads in the nodes listed in the file.",
     )
     if not args:
-        return
-    # Process the arguments as needed
+        log.error("Failed to parse arguments")
+        return 2
 
-    nodes = file_read(work_dir, args.file)
+    nodes = file_read(args.work_dir, args.file)
     for node in nodes:
         node_handle = ms_nodes.Node(node["serialNumber"])
         for workload in node.get("workloads", []):
             workload_name = workload["name"]
             node_handle.workload_control(workload_name, args.state.upper())
+    return 0

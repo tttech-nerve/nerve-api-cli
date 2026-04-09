@@ -1,4 +1,4 @@
-# Copyright (c) 2024 TTTech Industrial Automation AG.
+# Copyright (c) 2026 TTTech Industrial Automation AG.
 #
 # ALL RIGHTS RESERVED.
 # Usage of this software, including source code, netlists, documentation,
@@ -44,15 +44,15 @@ def args_nodes_reboot(parser):
     parser.add_argument("-y", "--yes", action="store_true", help="Don't ask for confirmation")
 
 
-def nodes_reboot(ms_nodes, work_dir, arg, log=None):
-    if not log:
-        log = logging.getLogger(__name__)
+def nodes_reboot(ms_nodes, arg, log=None):
+    ret_val = 0
+    log = log.getChild(__name__.split(".")[-1]) if log else logging.getLogger(__name__)
     args = args_interactive(arg, args_nodes_reboot, "Reboot nodes")
     if not args:
-        return
-    # Process the arguments as needed
+        log.error("Failed to parse arguments")
+        return 2
 
-    nodes = file_read(work_dir, args.file)
+    nodes = file_read(args.work_dir, args.file)
 
     for node in nodes:
         # Ask for confirmation
@@ -69,3 +69,6 @@ def nodes_reboot(ms_nodes, work_dir, arg, log=None):
         except CheckStatusCodeError as ex_msg:
             if ex_msg.status_code == requests.codes.conflict:
                 log.warning("Node %s is currently offline and cannot be rebooted", node["name"])
+                ret_val = 1
+
+    return ret_val

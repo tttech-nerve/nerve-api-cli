@@ -1,4 +1,4 @@
-# Copyright (c) 2024 TTTech Industrial Automation AG.
+# Copyright (c) 2026 TTTech Industrial Automation AG.
 #
 # ALL RIGHTS RESERVED.
 # Usage of this software, including source code, netlists, documentation,
@@ -19,7 +19,7 @@
 
 """Command line interface for nerve_cli API."""
 
-from . import main
+from .cli import main
 
 if __name__ == "__main__":
     main()
