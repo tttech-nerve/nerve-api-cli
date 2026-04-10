@@ -1,7 +1,7 @@
 <p align="center" style='font-size: 12px; font-family: "Monaco";'>
     <img src="./img/logo-nerve-black.svg" alt="Nerve"/><b>&nbsp;API CLI</b><br><br>
     <a href="./LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg"/></a>
-    <a href="https://docs.python.org/3/"><img src="https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12%20%7C%203.13%20%7C%203.14-blue.svg"/></a>
+    <a href="https://docs.python.org/3/"><img src="https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13%20%7C%203.14-blue.svg"/></a>
     <a href="https://docs.nerve.cloud"><img src="https://img.shields.io/badge/nerve-2.9%20%7C%202.10%20%7C%203.0%20%7C%203.1-blue.svg"/></a>
 </p>
 
@@ -9,7 +9,7 @@ The *Nerve API CLI* provides a command line interface to the REST API of a [Nerv
 
 ## Installation
 
-The scripts have been developed and tested with Python 3.10+, and it is recommended to run them with Python 3.10 or later. 
+The scripts have been developed and tested with Python 3.11+, and it is recommended to run them with Python 3.11 or later. 
 
 > Note that the instructions below are for Linux operating systems. For information on how to create a virtual environment on Windows, please refer to [the official Python documentation](https://python.land/virtual-environments/virtualenv#How_to_create_a_Python_venv).
 
@@ -50,32 +50,38 @@ The individual Python files are structured along the objects they work on. To ac
 Start the function running `nerve.py` with arguments. See `--help` for usage details or refer to the help output below:
 
 ```
-usage: nerve-cli [-h] [--ms_url <MS_url>] [--ms_user <MS_username>] [--ms_password <MS_password>] [--work_dir <directory>] [-l {DEBUG,INFO,WARNING,ERROR,CRITICAL}]
-             {cli,workload_create,ms_workloads,nodes_list,nodes_reboot,nodes_workloads_state,nodes_remote_connections,labels,logout} ...
+usage: nerve-cli [-h] [--ms_url <MS_url>] [--ms_user <MS_username>] [--ms_password <MS_password>] [--work_dir <directory>] [--log_level {DEBUG,INFO,WARNING,ERROR,CRITICAL}]
+                 [--store_credentials]
+                 {cli,workload_create,ms_workloads,nodes_list,nodes_reboot,nodes_dna,service_os_dna,nodes_workloads_state,nodes_remote_connections,labels,docker_volumes,logout}
+                 ...
 
 Nerve API CLI for deploying applications to devices.
 
 positional arguments:
-  {cli,workload_create,ms_workloads,nodes_list,nodes_reboot,nodes_workloads_state,nodes_remote_connections,labels,logout}
+  {cli,workload_create,ms_workloads,nodes_list,nodes_reboot,nodes_dna,service_os_dna,nodes_workloads_state,nodes_remote_connections,labels,docker_volumes,logout}
                         Available sub-commands:
     cli                 Start the interactive CLI
     workload_create     Create a new workload on the management system. An option allows to create a template.
     ms_workloads        Create a workloads json file based on filter options, and perform actions on these workloads like deploy or delete.
     nodes_list          Create a nodes json file based on different filter options.
     nodes_reboot        Reboot nodes
+    nodes_dna           Nodes DNA functions
+    service_os_dna      Service OS DNA functions
     nodes_workloads_state
                         Change the state of all workloads listed in the nodes file
     nodes_remote_connections
                         Manage remote tunnels from nodes
     labels              Manage labels on the management system
+    docker_volumes      Manage docker volumes via local UI or MS API.
     logout              Logout from the management system
 
-optional arguments:
+options:
   -h, --help            show this help message and exit
   --work_dir <directory>
                         Directory to store temporary files (defaults to work_dir)
-  -l {DEBUG,INFO,WARNING,ERROR,CRITICAL}, --log_level {DEBUG,INFO,WARNING,ERROR,CRITICAL}
+  --log_level {DEBUG,INFO,WARNING,ERROR,CRITICAL}
                         Set the log level (default: INFO)
+  --store_credentials   Store the provided credentials in the credentials.ini file for future use
 
 Management System Settings:
   --ms_url <MS_url>     Url of the Nerve MS. If a credentials.ini file exists with only one section, the MS will be set to this (default to env-var MS_URL)
@@ -99,7 +105,7 @@ password = mypassword
 ```
 The file may also contain multiple sections. The section name, defines the management system URL (without https://).
 When working with multiple Management Systems the use of `credentials.ini` file is recommended. The CLI app argument --ms_url must be defined to work with the correct
-management system, but the passwords will be retrieved from the `credentials.ini` without the need to define them in env-vars or the command-line arguments. 
+management system, but the passwords will be retrieved from the `credentials.ini` without the need to define them in env-vars or the command-line arguments. To add new entries to to credentials file the `--store_credentials` flag can be used. This will add the credentials provided via command-line arguments to the `credentials.ini` file. If the file does not exist, it will be created.
 
 ### Example Usage
 

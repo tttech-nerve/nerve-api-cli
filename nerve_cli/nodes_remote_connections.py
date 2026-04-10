@@ -1,4 +1,4 @@
-# Copyright (c) 2024 TTTech Industrial Automation AG.
+# Copyright (c) 2026 TTTech Industrial Automation AG.
 #
 # ALL RIGHTS RESERVED.
 # Usage of this software, including source code, netlists, documentation,
@@ -67,21 +67,17 @@ def args_nodes_remote_connections(parser):
     )
 
     actions_group.add_argument(
-        "-a",
         "--add",
         help="The tunnels/screens will be added to the nodes in 'file' with the settings from the 'remotes_file'.",
         action="store_true",
     )
 
     actions_group.add_argument(
-        "-d",
         "--delete",
         help="The tunnels/screens will be deleted from the nodes in 'file' with the settings from the 'remotes_file'.",
         action="store_true",
     )
-    actions_group.add_argument(
-        "-e", "--establish", help="Establish the remote connections.", action="store_true"
-    )
+    actions_group.add_argument("--establish", help="Establish the remote connections.", action="store_true")
 
 
 def get_existing_remotes(ms_nodes, nodes):
@@ -105,9 +101,7 @@ def find_in_remotes_list(remote_element, remotes_list):
     for remote_compare in remotes_list:
         result = True
         for key in remote_element:
-            if key not in remote_compare:
-                result = False
-            elif remote_element[key] != remote_compare[key]:
+            if key not in remote_compare or remote_element[key] != remote_compare[key]:
                 result = False
         if result:
             # One element in the list is equal to the element
@@ -117,22 +111,21 @@ def find_in_remotes_list(remote_element, remotes_list):
     return {}
 
 
-def nodes_remote_connections(ms_nodes, work_dir, arg, log=None):  # noqa: PLR0912
-    if not log:
-        log = logging.getLogger(__name__)
+def nodes_remote_connections(ms_nodes, arg, log=None):  # noqa: PLR0912
+    log = log.getChild(__name__.split(".")[-1]) if log else logging.getLogger(__name__)
     args = args_interactive(
         arg,
         args_nodes_remote_connections,
         "Manage remote connections of a node. The node_remotes file will be updated or created if it does not exist.",
     )
     if not args:
-        return
-    # Process the arguments as needed
+        log.error("Failed to parse arguments")
+        return 2
 
     if args.template_create:
         if args.template_create == "tunnel":
             file_write(
-                work_dir,
+                args.work_dir,
                 args.remotes_file,
                 [
                     {
@@ -147,7 +140,7 @@ def nodes_remote_connections(ms_nodes, work_dir, arg, log=None):  # noqa: PLR091
             )
         elif args.template_create == "screen":
             file_write(
-                work_dir,
+                args.work_dir,
                 args.remotes_file,
                 [
                     {
@@ -170,28 +163,27 @@ def nodes_remote_connections(ms_nodes, work_dir, arg, log=None):  # noqa: PLR091
                 ],
             )
         elif args.template_create == "first_node":
-            nodes = file_read(work_dir, args.file)
+            nodes = file_read(args.work_dir, args.file)
             if not nodes:
-                log.error("No nodes found in the file: %s", args.file)
-                return
+                raise RuntimeError("No nodes found in the file: %s", args.file)
             node_handle = ms_nodes.Node(nodes[0]["serialNumber"])
             remotes = node_handle.get_remote_connections()
             for key in ["uniqueConnectionRequestNo", "workloadId", "versionId", "serialNumber", "_id"]:
                 for remote in remotes:
                     if key in remote:
                         del remote[key]
-            file_write(work_dir, args.remotes_file, remotes)
+            file_write(args.work_dir, args.remotes_file, remotes)
 
     if args.list:
-        nodes = file_read(work_dir, args.file)
+        nodes = file_read(args.work_dir, args.file)
         existing_remotes = get_existing_remotes(ms_nodes, nodes)
         log.info("Remote connections for the nodes: \n%s", json.dumps(existing_remotes, indent=4))
 
     if args.add:
-        nodes = file_read(work_dir, args.file)
+        nodes = file_read(args.work_dir, args.file)
         existing_remotes = get_existing_remotes(ms_nodes, nodes)
 
-        file_remotes = file_read(work_dir, args.remotes_file)
+        file_remotes = file_read(args.work_dir, args.remotes_file)
 
         tunnels_to_add = {}
         for node in nodes:
@@ -210,9 +202,9 @@ def nodes_remote_connections(ms_nodes, work_dir, arg, log=None):  # noqa: PLR091
             node_handle = ms_nodes.Node(serial_number)
             node_handle.add_remote_connection(remote_connection)
     if args.delete:
-        nodes = file_read(work_dir, args.file)
+        nodes = file_read(args.work_dir, args.file)
         existing_remotes = get_existing_remotes(ms_nodes, nodes)
-        file_remotes = file_read(work_dir, args.remotes_file)
+        file_remotes = file_read(args.work_dir, args.remotes_file)
 
         tunnels_to_remove = {}
         for node in nodes:
@@ -232,8 +224,8 @@ def nodes_remote_connections(ms_nodes, work_dir, arg, log=None):  # noqa: PLR091
             node_handle = ms_nodes.Node(serial_number)
             node_handle.remove_remote_connection(remote_connection)
     if args.establish:
-        nodes = file_read(work_dir, args.file)
-        remotes = file_read(work_dir, args.remotes_file)
+        nodes = file_read(args.work_dir, args.file)
+        remotes = file_read(args.work_dir, args.remotes_file)
 
         for node in nodes:
             existing_remotes = get_existing_remotes(ms_nodes, [node])
@@ -255,3 +247,5 @@ def nodes_remote_connections(ms_nodes, work_dir, arg, log=None):  # noqa: PLR091
                     subprocess.call(["xdg-open", url])
                 else:
                     webbrowser.open(url, new=0, autoraise=True)
+
+    return 0

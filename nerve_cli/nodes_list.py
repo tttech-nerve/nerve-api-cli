@@ -1,4 +1,4 @@
-# Copyright (c) 2024 TTTech Industrial Automation AG.
+# Copyright (c) 2026 TTTech Industrial Automation AG.
 #
 # ALL RIGHTS RESERVED.
 # Usage of this software, including source code, netlists, documentation,
@@ -35,7 +35,7 @@ def find_path(data, node_name, path=None):
 
     if isinstance(data, dict):
         for key, value in data.items():
-            new_path = path + [key]
+            new_path = [*path, key]
             if key == "name" and value == node_name:
                 return path
 
@@ -155,12 +155,12 @@ def args_nodes_list(parser):
     )
 
 
-def nodes_list(ms_nodes, work_dir, arg, log=None):  # noqa: PLR0914
-    if not log:
-        log = logging.getLogger(__name__)
+def nodes_list(ms_nodes, arg, log=None):  # noqa: PLR0914
+    log = log.getChild(__name__.split(".")[-1]) if log else logging.getLogger(__name__)
     args = args_interactive(arg, args_nodes_list, "List nodes and create a node list or add to the list")
     if not args:
-        return
+        log.error("Failed to parse arguments")
+        return 2
 
     # Process the arguments as needed
     output = []
@@ -277,6 +277,11 @@ def nodes_list(ms_nodes, work_dir, arg, log=None):  # noqa: PLR0914
 
         output.append(node)
     if args.add:
-        file_append(work_dir, args.file, output)
+        file_append(args.work_dir, args.file, output)
     else:
-        file_write(work_dir, args.file, output)
+        file_write(args.work_dir, args.file, output)
+
+    if not output:
+        log.warning("No node matched the specified filters.")
+        return 1
+    return 0

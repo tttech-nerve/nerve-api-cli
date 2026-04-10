@@ -1,4 +1,4 @@
-# Copyright (c) 2024 TTTech Industrial Automation AG.
+# Copyright (c) 2026 TTTech Industrial Automation AG.
 #
 # ALL RIGHTS RESERVED.
 # Usage of this software, including source code, netlists, documentation,
@@ -61,30 +61,38 @@ def args_labels(parser):
     )
 
 
-def labels(ms_label, work_dir, arg, log=None):
-    if not log:
-        log = logging.getLogger(__name__)
+def labels(ms_label, arg, log=None):
+    log = log.getChild(__name__.split(".")[-1]) if log else logging.getLogger(__name__)
     args = args_interactive(
         arg,
         args_labels,
         "Manage remote tunnels of a node. The node_tunnel file will be updated or created if it does not exist.",
     )
+    if not args:
+        log.error("Failed to parse arguments")
+        return 2
 
     # Process the arguments as needed
     if args.list:
         labels = ms_label.fetch_labels()
         labels = [{"key": label.get("key"), "value": label.get("value")} for label in labels.get("data", [])]
-        file_write(work_dir, args.file, labels)
+        file_write(args.work_dir, args.file, labels)
         log.info(
             "Labels read from management system and written to %s:\n%s",
             args.file,
             json.dumps(labels, indent=4),
         )
+        return 0
     if args.add:
-        labels = file_read(work_dir, args.file)
+        labels = file_read(args.work_dir, args.file)
         for label in labels:
             ms_label.create_label(label.get("key"), label.get("value"))
+        return 0
     if args.delete:
-        labels = file_read(work_dir, args.file)
+        labels = file_read(args.work_dir, args.file)
         for label in labels:
             ms_label.delete(label.get("key"), label.get("value"))
+        return 0
+
+    log.error("No valid action specified")
+    return 2

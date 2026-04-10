@@ -1,4 +1,4 @@
-# Copyright (c) 2024 TTTech Industrial Automation AG.
+# Copyright (c) 2026 TTTech Industrial Automation AG.
 #
 # ALL RIGHTS RESERVED.
 # Usage of this software, including source code, netlists, documentation,
@@ -66,14 +66,14 @@ def args_workload_create(parser):
     )
 
 
-def workload_create(ms_workloads, work_dir, arg, log=None):
+def workload_create(ms_workloads, arg, log=None):
     """Create a single workload on the management system"""
 
     def create_individual_workload(wl):
         if type(wl) is not dict:
             raise TypeError("Workload definition must be a dictionary")
         api_version = 3 if wl["type"] == "docker-compose" else 2
-        search_pathes = [posixpath.join(work_dir, file_path) for file_path in args.path.split(",")]
+        search_pathes = [posixpath.join(args.work_dir, file_path) for file_path in args.path.split(",")]
         file_pathes = []
         for search_path in search_pathes:
             file_pathes += sorted([file_path.as_posix() for file_path in Path.cwd().glob(search_path)])
@@ -81,14 +81,13 @@ def workload_create(ms_workloads, work_dir, arg, log=None):
         wl = clean_wl_definition(wl)
         ms_workloads.provision_workload(wl, file_pathes, api_version)
 
-    if not log:
-        log = logging.getLogger(__name__)
+    log = log.getChild(__name__.split(".")[-1]) if log else logging.getLogger(__name__)
     args = args_interactive(
         arg, args_workload_create, "Create a workload on the management system based on the given template."
     )
     if not args:
-        return
-    # Process the arguments as needed
+        log.error("Failed to parse arguments")
+        return 2
 
     if args.template:
         networks = ["bridge"]
@@ -145,18 +144,20 @@ def workload_create(ms_workloads, work_dir, arg, log=None):
             auth_psw="",
         )
 
-        file_write(work_dir, args.file, wl_template)
+        file_write(args.work_dir, args.file, wl_template)
 
     elif args.create:
-        wl_config = file_read(work_dir, args.file)
+        wl_config = file_read(args.work_dir, args.file)
         if type(wl_config) is list:
             for i, wl in enumerate(wl_config):
                 try:
                     create_individual_workload(wl)
                 except TypeError as e:
-                    log.warning("Workload creation failed for element %i: %s", i, e)
+                    raise TypeError(f"Workload creation failed for element {i}: {e}")
         else:
             try:
                 create_individual_workload(wl_config)
             except TypeError as e:
-                log.error("Unable to interpret file. Workload creation failed: %s", e)
+                raise TypeError(f"Unable to interpret file. Workload creation failed: {e}")
+
+    return 0
