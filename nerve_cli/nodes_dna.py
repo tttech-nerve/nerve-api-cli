@@ -168,7 +168,7 @@ def nodes_dna(ms_nodes, arg, log=None):
                 ("config.zip", zip_bin),
                 continue_after_restart=args.continue_after_restart,
                 restart_all_wl=args.restart_all_workloads,
-                remove_docker_images=args.remove_docker_images,
+                remove_images=args.remove_docker_images,
             )
             log.info("DNA configuration deployed to node %s", node["name"])
         if args.cancel:
