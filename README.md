@@ -140,6 +140,23 @@ The new workload can now be created on the Management System with the following 
 poetry run nerve-cli workload_create --create --file wl_def_docker.json --path ../../images/nginx.tar.gz
 ```
 
+## Creating workloads
+To create a new workload or workload version, a json file with the workload definition as well as the necessary workload files are needed. The easiest way to get a template of the json schema and the files that are needed is to use an existing workload and apply the copy command. This will download and prepare all the necessary files from an existing workload version and place it in the work directory so that all the files can be used to immediately use it to create the workload on e.g. another Management System.
+
+### Example
+Filter for a desired workload that should be used as a template and load it into `work_dir/workloads.json`:
+
+```bash
+nerve-cli --ms_url <url-of-nerve-ms> --ms_user <user> --ms_password <password> ms_workloads -l -n <workload_name> -v <workload_version>
+```
+
+Finds the workload with name `workload_name` and version `workload_version` on the Management System and creates a `workloads.json` with the particular workload. Now the copy command can be used (it will be applied to all workloads that are present in the `workloads.json`, so to the one that has just been filtered out).
+
+```bash
+nerve-cli --ms_url <url-of-nerve-ms> --ms_user <user> --ms_password <password> ms_workloads --copy
+```
+This will create a subfolder in the `work_dir` with all the relevant files that are needed to create the workload that has just been filtered. This can be used as a template to create a new workload, or a new workload version. Simply adapt the workload definition in the `json` file and replace the relevant image files. Then use the `workload_create` command and use the adapted files.
+
 ## Use the library directly
 
 To use the [*nerve_lib*](https://github.com/tttech-nerve/nerve-api-python.git) examples defined in the CLI tool can be used as a starting point. The [*nerve_lib*](https://github.com/tttech-nerve/nerve-api-python.git) is structured in several sections allowing to control the complete management system using API calls. The general_utils.py contains the main handles for the management system and the local UI interface of the nodes. The other lib-files extend the handles with additional functions. 
