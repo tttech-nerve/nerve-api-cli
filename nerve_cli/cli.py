@@ -108,7 +108,7 @@ def handle_do_errors(func):
         except Exception as ex_msg:  # noqa: BLE001
             emsg, print_trace = _format_cli_error(ex_msg)
             self._log.error(emsg)
-            if print_trace:
+            if print_trace or self.args.log_level == "TRACE":
                 self._log.exception(ex_msg)
             self.last_exit_code = 2
         return False  # to prevent cmd from exiting on exceptions
@@ -208,9 +208,9 @@ class NerveCLI(cmd.Cmd):
 
     @classmethod
     def do_log_level(cls, log_level: str):
-        """Set the log-level (DEBUG, INFO, WARNING, ERROR, CRITICAL)."""
+        """Set the log-level (TRACE, DEBUG, INFO, WARNING, ERROR, CRITICAL)."""
 
-        if log_level not in {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}:
+        if log_level not in {"TRACE", "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}:
             raise ValueError(f"Invalid format for log_level: {log_level}")
 
         handlers = [
@@ -219,7 +219,7 @@ class NerveCLI(cmd.Cmd):
             if isinstance(handler, (logging.StreamHandler, logging.FileHandler))
         ]
         for handler in handlers:
-            handler.setLevel(log_level)
+            handler.setLevel(log_level if log_level != "TRACE" else logging.DEBUG)
 
     def do_exit(self):
         "Exit the CLI: exit."
@@ -362,7 +362,7 @@ def main():  # noqa: PLR0915
         default="INFO",
         help="Set the log level (default: INFO)",
         type=str,
-        choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+        choices=["TRACE", "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
     )
     parser.add_argument(
         "--store_credentials",
@@ -459,7 +459,10 @@ def main():  # noqa: PLR0915
         cli_log.info(f"Credentials for {args.ms_url} stored in credentials.ini")
 
     if not hasattr(args, "func"):
-        raise SystemExit("No sub-command specified")
+        if not args.store_credentials:
+            raise SystemExit("No sub-command specified")
+        cli_log.info("No sub-command specified, but credentials stored successfully. Exiting.")
+        sys.exit(0)
 
     cli = NerveCLI(args)
     if "workload_create" == args.func:

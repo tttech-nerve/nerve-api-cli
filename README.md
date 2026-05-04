@@ -2,7 +2,7 @@
     <img src="./img/logo-nerve-black.svg" alt="Nerve"/><b>&nbsp;API CLI</b><br><br>
     <a href="./LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg"/></a>
     <a href="https://docs.python.org/3/"><img src="https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13%20%7C%203.14-blue.svg"/></a>
-    <a href="https://docs.nerve.cloud"><img src="https://img.shields.io/badge/nerve-2.9%20%7C%202.10%20%7C%203.0%20%7C%203.1-blue.svg"/></a>
+    <a href="https://docs.nerve.cloud"><img src="https://img.shields.io/badge/nerve-2.9%20%7C%202.10%20%7C%203.0%20%7C%203.1%20%7C%203.1.1-blue.svg"/></a>
 </p>
 
 The *Nerve API CLI* provides a command line interface to the REST API of a [Nerve Management System](https://docs.nerve.cloud). It is essentially a command line wrapper for some parts of the [*nerve_lib*](https://github.com/tttech-nerve/nerve-api-python) and can be used to integrate *Nerve* related workflows into a build pipeline and automate common tasks such as workload creation and deployment. Since the CLI does only cover a subset of functions provided by the *[*nerve_lib*](https://github.com/tttech-nerve/nerve-api-python.git)* please refer to the library directly if additional flexibility or functionality is needed.
@@ -50,15 +50,13 @@ The individual Python files are structured along the objects they work on. To ac
 Start the function running `nerve.py` with arguments. See `--help` for usage details or refer to the help output below:
 
 ```
-usage: nerve-cli [-h] [--ms_url <MS_url>] [--ms_user <MS_username>] [--ms_password <MS_password>] [--work_dir <directory>] [--log_level {DEBUG,INFO,WARNING,ERROR,CRITICAL}]
-                 [--store_credentials]
-                 {cli,workload_create,ms_workloads,nodes_list,nodes_reboot,nodes_dna,service_os_dna,nodes_workloads_state,nodes_remote_connections,labels,docker_volumes,logout}
-                 ...
+usage: nerve-cli [-h] [--ms_url <MS_url>] [--ms_user <MS_username>] [--ms_password <MS_password>] [--work_dir <directory>] [--log_level {TRACE,DEBUG,INFO,WARNING,ERROR,CRITICAL}] [--store_credentials]
+                 {cli,workload_create,ms_workloads,nodes_list,nodes_reboot,nodes_dna,service_os_dna,nodes_workloads_state,nodes_remote_connections,labels,docker_volumes} ...
 
 Nerve API CLI for deploying applications to devices.
 
 positional arguments:
-  {cli,workload_create,ms_workloads,nodes_list,nodes_reboot,nodes_dna,service_os_dna,nodes_workloads_state,nodes_remote_connections,labels,docker_volumes,logout}
+  {cli,workload_create,ms_workloads,nodes_list,nodes_reboot,nodes_dna,service_os_dna,nodes_workloads_state,nodes_remote_connections,labels,docker_volumes}
                         Available sub-commands:
     cli                 Start the interactive CLI
     workload_create     Create a new workload on the management system. An option allows to create a template.
@@ -73,13 +71,12 @@ positional arguments:
                         Manage remote tunnels from nodes
     labels              Manage labels on the management system
     docker_volumes      Manage docker volumes via local UI or MS API.
-    logout              Logout from the management system
 
 options:
   -h, --help            show this help message and exit
   --work_dir <directory>
                         Directory to store temporary files (defaults to work_dir)
-  --log_level {DEBUG,INFO,WARNING,ERROR,CRITICAL}
+  --log_level {TRACE,DEBUG,INFO,WARNING,ERROR,CRITICAL}
                         Set the log level (default: INFO)
   --store_credentials   Store the provided credentials in the credentials.ini file for future use
 
@@ -142,6 +139,23 @@ The new workload can now be created on the Management System with the following 
 ```bash
 poetry run nerve-cli workload_create --create --file wl_def_docker.json --path ../../images/nginx.tar.gz
 ```
+
+## Creating workloads
+To create a new workload or workload version, a json file with the workload definition as well as the necessary workload files are needed. The easiest way to get a template of the json schema and the files that are needed is to use an existing workload and apply the copy command. This will download and prepare all the necessary files from an existing workload version and place it in the work directory so that all the files can be used to immediately use it to create the workload on e.g. another Management System.
+
+### Example
+Filter for a desired workload that should be used as a template and load it into `work_dir/workloads.json`:
+
+```bash
+nerve-cli --ms_url <url-of-nerve-ms> --ms_user <user> --ms_password <password> ms_workloads -l -n <workload_name> -v <workload_version>
+```
+
+Finds the workload with name `workload_name` and version `workload_version` on the Management System and creates a `workloads.json` with the particular workload. Now the copy command can be used (it will be applied to all workloads that are present in the `workloads.json`, so to the one that has just been filtered out).
+
+```bash
+nerve-cli --ms_url <url-of-nerve-ms> --ms_user <user> --ms_password <password> ms_workloads --copy
+```
+This will create a subfolder in the `work_dir` with all the relevant files that are needed to create the workload that has just been filtered. This can be used as a template to create a new workload, or a new workload version. Simply adapt the workload definition in the `json` file and replace the relevant image files. Then use the `workload_create` command and use the adapted files.
 
 ## Use the library directly
 

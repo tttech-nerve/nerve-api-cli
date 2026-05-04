@@ -33,6 +33,7 @@ from datetime import datetime
 from pathlib import Path
 
 import yaml
+from nerve_lib import CheckStatusCodeError
 
 from .utils import args_interactive
 from .utils import check_filter_arg
@@ -64,6 +65,7 @@ def args_ms_workloads(parser):
         "-t",
         "--type",
         metavar="FILTER",
+        default="",
         help="Filter for specific workload type",
         choices=["docker", "codesys", "vm", "docker-compose"],
     )
@@ -71,6 +73,7 @@ def args_ms_workloads(parser):
         "-n",
         "--name",
         metavar="FILTER",
+        default="",
         help="Filter by name, supports regex (define 'regex:' followed by the filter-string).",
     )
     filter_args.add_argument(
@@ -368,7 +371,7 @@ def _ms_workloads_copy(ms_workloads, args, log=None):
         )
 
 
-def _ms_workloads_list(ms_workloads, args, log=None):
+def _ms_workloads_list(ms_workloads, args, log=None):  # noqa: PLR0915
     def filter_versions(workload, args):
         versions = workload["versions"]
         versions = [v for v in versions if check_filter_arg(args.version_name, v["name"])]
@@ -429,7 +432,7 @@ def _ms_workloads_list(ms_workloads, args, log=None):
 
         return versions
 
-    def human_readable_output(versions, wl_internal_registry):
+    def human_readable_output(wl_type, versions, wl_internal_registry):
         log.info(
             "%s%s Workload '%s' (%s):",
             wl_type,
@@ -470,19 +473,15 @@ def _ms_workloads_list(ms_workloads, args, log=None):
     output = []
 
     # get full list of all workloads
+    filter_name = args.name if "regex:" not in args.name else ""
     wl_list = ms_workloads.get_workloads_dict(
-        read_versions=True, read_compose_details=True, compact_dict=False, ignore_read_error=True
+        read_versions=True, compact_dict=False, filter_name=filter_name, filter_type=args.type
     )
-    if failed_count := ms_workloads.failed_get_workloads:
-        log.warning("Could not read info of %d workloads", failed_count)
+
     # apply workload level filters
     for workload in wl_list:
         wl_name = workload["name"]
         if not check_filter_arg(args.name, wl_name):
-            continue
-
-        wl_type = workload["type"]
-        if not check_filter_arg(args.type, wl_type):
             continue
 
         wl_id = workload["_id"]
@@ -499,11 +498,31 @@ def _ms_workloads_list(ms_workloads, args, log=None):
         log.debug("Filtered versions for workload '%s': %s", wl_name, filtered_versions)
 
         wl_internal_registry = workload.get("internalDockerRegistry", False)
-        human_readable_output(filtered_versions, wl_internal_registry)
+        human_readable_output(workload["type"], filtered_versions, wl_internal_registry)
 
         wl_output = deepcopy(workload)
         wl_output["versions"] = filtered_versions
         output.append(wl_output)
+
+    # Check if all workload details can be read successfully
+    failed_count = 0
+    for workload in output:
+        for version in workload["versions"]:
+            try:
+                if workload.get("type") == "docker-compose" or (
+                    workload.get("type") == "docker" and workload.get("internalDockerRegistry")
+                ):
+                    ms_workloads.WorkloadVersion(
+                        workload["name"], version["name"]
+                    ).get_additional_version_details()
+            except CheckStatusCodeError as ex_msg:
+                log.warning(
+                    "Failed to read details for workload '%s', version '%s': %s",
+                    workload["name"],
+                    version["name"],
+                    ex_msg,
+                )
+                failed_count += 1
 
     file_write(args.work_dir, args.file, output)
     if not output:
