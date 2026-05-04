@@ -1,6 +1,6 @@
 [project]
 name = "nerve_cli"
-version = "1.2.0"
+version = "1.2.1"
 description = "Nerve API examples CLI tool"
 authors = [
     {name = "Nerve Development Team",email = "dev@nerve.cloud"}
