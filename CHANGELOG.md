@@ -1,6 +1,6 @@
 # Changelog
 
-# Release for 3.2.0
+# Release 2.0.0
 - Refactored nerve-cli structure to a more modular design, improving maintainability and scalability.
   - Using `-` separators for all subcommands and arguments instead of `_` to align with common CLI conventions.
   - Main sections for one-shot commands: `template`, `ms-workloads`, `ms-nodes`, `ms-labels`, `local-node`. Each section has its own subcommands and arguments, allowing for better organization and easier navigation.
@@ -11,9 +11,11 @@
   - Added an experimental feature to manage remote tunnel and screen connections for nodes from INPUT. This feature is still under development and may have limited functionality. Use with caution.
   - Created templates for remote connections and workloads do not provide a schema. The templates section will be enhanced in future releases to include schema file.
 
-# Release for 3.1.1
-- Fixed issue with defining paths to files (absolute path vs relative path)
+# Release 1.3.0
 - Improved performance of get workload list by applying filters on request
+
+# Release 1.2.0
+- Fixed issue with defining paths to files (absolute path vs relative path)
 - Updated library versions, code cleanup, fixed StatusCode error reporing
 - Removing missleading shorts of arguments
 - Adding 'paste' mechanism to allow a copy-paste from one MS to another or to change the workload type from legacy to docker-registry
@@ -28,12 +30,12 @@
         Example: `nerve-cli --ms_url <ms-url.nerve.cloud> docker_volumes --backup`
 - Adding non 0 exit codes in case of an error
 
-# Release for 3.1.0
+# Release 1.1.0
 - Fixed download/copy function of workloads
 - Removed sessions file as the nerve-lib will logout automatically from MS. Session key cannot be reused
 - Added cli for Service-OS-DNA functions
 - Fixed DNA reapply_target call
 - Improved error-reporting
 
-# Release for 3.0.1
+# Release 1.0.0
 - Initial version

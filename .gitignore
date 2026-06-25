@@ -3,3 +3,4 @@ session.ini
 credentials.ini
 work_dir
 .vscode
+.build
