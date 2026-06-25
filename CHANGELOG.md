@@ -1,0 +1,39 @@
+# Changelog
+
+# Release for 3.2.0
+- Refactored nerve-cli structure to a more modular design, improving maintainability and scalability.
+  - Using `-` separators for all subcommands and arguments instead of `_` to align with common CLI conventions.
+  - Main sections for one-shot commands: `template`, `ms-workloads`, `ms-nodes`, `ms-labels`, `local-node`. Each section has its own subcommands and arguments, allowing for better organization and easier navigation.
+  - `cli` section starts an interactive shell for executing commands in a more user-friendly manner.
+  - Changed default log level to `WARNING` to reduce verbosity. Users can still set the log level to `INFO` or `DEBUG` using the `-v`or `-vv` flags. The `cli` section will start in `INFO` log level by default.
+- Hardened interactive CLI shell execution with a strict command allowlist for `shell` and `!` commands.
+- **Known Limitiation**: 
+  - Added an experimental feature to manage remote tunnel and screen connections for nodes from INPUT. This feature is still under development and may have limited functionality. Use with caution.
+  - Created templates for remote connections and workloads do not provide a schema. The templates section will be enhanced in future releases to include schema file.
+
+# Release for 3.1.1
+- Fixed issue with defining paths to files (absolute path vs relative path)
+- Improved performance of get workload list by applying filters on request
+- Updated library versions, code cleanup, fixed StatusCode error reporing
+- Removing missleading shorts of arguments
+- Adding 'paste' mechanism to allow a copy-paste from one MS to another or to change the workload type from legacy to docker-registry
+- Adding backup and restore functions for docker-volumes over local-ui connection to a node.
+    > [!Tip] Usage of backup and restore functions:
+        Backup all names volumes of a node connected via mgmt port: 
+        `nerve-cli docker_volumes --localui_password <password> --backup`\        
+        The volume backup data is stored in the _`<workdir>/volumes_backup/<NodeSerial>/<volumes>.zip`_\
+        To restore the volumes on a node, use the argument `--restore`\
+        If the default admin account is deactivated, the MS credentials can be used by providing the MS URL (using stored credentials) or 
+        the MS password and MS user explicitly.\
+        Example: `nerve-cli --ms_url <ms-url.nerve.cloud> docker_volumes --backup`
+- Adding non 0 exit codes in case of an error
+
+# Release for 3.1.0
+- Fixed download/copy function of workloads
+- Removed sessions file as the nerve-lib will logout automatically from MS. Session key cannot be reused
+- Added cli for Service-OS-DNA functions
+- Fixed DNA reapply_target call
+- Improved error-reporting
+
+# Release for 3.0.1
+- Initial version

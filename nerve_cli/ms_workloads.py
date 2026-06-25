@@ -20,455 +20,219 @@
 
 """Function for listing workloads"""
 
-import gzip
-import json
 import logging
-import os
-import posixpath
-import shutil
-import tarfile
-from copy import deepcopy
-from datetime import UTC
-from datetime import datetime
-from pathlib import Path
 
-import yaml
-from nerve_lib import CheckStatusCodeError
-
+from .ms_workloads_export import ms_workloads_export
+from .ms_workloads_provision import ms_workloads_provision
 from .utils import args_interactive
-from .utils import check_filter_arg
-from .utils import clean_wl_definition
-from .utils import docker_registry_workflow
+from .utils import ask_for_confirmation
 from .utils import file_read
 from .utils import file_write
-from .utils import format_size_string
-from .utils import size_string_to_bytes
+from .utils_nodes import normalize_nodes_input
+from .utils_workloads import check_filter_arg
+from .utils_workloads import human_readable_output
+from .utils_workloads import normalize_workloads_input
+from .utils_workloads import validate_ms_workload_read_error
 
 
-def args_ms_workloads(parser):
-    parser.add_argument(
-        "-f",
-        "--file",
-        metavar="FILE_NAME",
-        default="workloads.json",
-        help="Specify the file name for storing and reading workloads from. Defaults to 'workloads.json' if omitted. '.json' is appended if not included.",
-    )
-    parser.add_argument(
-        "-p",
-        "--path",
-        metavar="PATH_NAME",
-        default="workload_files",
-        help="Specify the path name for storing and reading workload files from. Defaults to 'workload_files' if omitted.",
-    )
+def args_ms_workloads_list(parser):
     filter_args = parser.add_argument_group("Filter arguments for getting workloads list")
     filter_args.add_argument(
-        "-t",
         "--type",
-        metavar="FILTER",
+        metavar="TYPE",
         default="",
-        help="Filter for specific workload type",
+        help="Filter by workload type: docker, codesys, vm, or docker-compose",
         choices=["docker", "codesys", "vm", "docker-compose"],
     )
     filter_args.add_argument(
-        "-n",
         "--name",
-        metavar="FILTER",
+        metavar="PATTERN",
         default="",
-        help="Filter by name, supports regex (define 'regex:' followed by the filter-string).",
+        help="Filter by workload name. Supports regex with prefix 'regex:' (e.g., 'regex:app.*', 'myapp')",
     )
-    filter_args.add_argument(
-        "--id",
-        metavar="FILTER",
-        help="Filter by ID, supports regex (define 'regex:' followed by the filter-string).",
+    filter_args.add_argument("--disabled", help="Include disabled workloads in results", action="store_true")
+
+
+def args_ms_workloads_list_versions(parser):
+    filter_version_args = parser.add_argument_group(
+        "Filter arguments to only include specific workload versions in the list results"
     )
-    filter_args.add_argument(
-        "--disabled", help="Include disabled workloads in the results.", action="store_true"
-    )
-    filter_args.add_argument(
+    filter_version_args.add_argument(
         "-v",
-        "--version_name",
-        metavar="FILTER",
-        help="Filter by version name, supports regex (define 'regex:' followed by the filter-string).",
+        "--version-name",
+        metavar="PATTERN",
+        help="Filter by version name. Supports regex with prefix 'regex:' (e.g., 'regex:v[0-9]+', 'v1.0')",
     )
-    filter_args.add_argument(
+    filter_version_args.add_argument(
         "-r",
-        "--version_release_name",
-        metavar="FILTER",
-        help="Filter by version release name, supports regex (define 'regex:' followed by the filter-string).",
+        "--version-release-name",
+        metavar="PATTERN",
+        help="Filter by release name. Supports regex with prefix 'regex:' (e.g., 'regex:release_.*', 'stable')",
     )
-    filter_args.add_argument(
-        "--version_size_above",
-        metavar="FILTER",
-        help="Filter Workloads with file size above the given value (e.g. '4GB' or '100MB', must end with one of GB, MB, KB, B).",
-    )
-    filter_args.add_argument(
-        "--version_date_older_than",
-        metavar="FILTER",
-        help="Filter Workloads with version date older than the given value (date in format 'YYYY-MM-DD').",
-    )
-    filter_args.add_argument(
-        "--version_list_filter",
-        metavar="<start>:<end>",
+    filter_version_args.add_argument(
+        "--version-size",
+        default="",
         help=(
-            "Filter workload versions (sorted by creation date) to be listed by providing a range similar to list slicing in Python."
-            " E.g., '0:5' lists the first 5 versions, '-5:' the last 5 versions, '3' the 4th version only."
+            "Filter versions by size: use '<500MB' or '>2GB' (Linux/macOS shells), or "
+            "'lt:500MB'/'gt:2GB' (Windows-friendly). Units: B, KB, MB, GB, TB"
         ),
     )
-
-    deploy_args = parser.add_argument_group("Optional arguments for workloads deployment")
-    deploy_args.add_argument(
-        "--nodes_file",
-        metavar="FILE_NAME",
-        default="nodes.json",
-        help="Specify the file name which is listing the nodes to operate on. Defaults to 'nodes.json' if omitted. '.json' is appended if not included.",
-    )
-    deploy_args.add_argument("--wait", help="Wait for the deployment to finish.", action="store_true")
-
-    deploy_args.add_argument(
-        "--registry", help=("Paste the copied Workload as a registry workload"), action="store_true"
-    )
-
-    deploy_args.add_argument(
-        "--legacy", help=("Paste the copied Workload as a legacy workload"), action="store_true"
-    )
-    required_group = parser.add_argument_group("Mutually exclusive arguments for action")
-    action_group = required_group.add_mutually_exclusive_group(required=True)
-    action_group.add_argument(
-        "-l",
-        "--list",
-        help="List the workloads (and versions) and store results to 'file'",
-        action="store_true",
-    )
-    action_group.add_argument(
-        "--copy",
+    filter_version_args.add_argument(
+        "--version-date",
+        metavar="FILTER",
         help=(
-            "Downloads the workload version, storing the workload definitions to"
-            " 'file' (similar to --list). Within <path>/<workload_name>/<version_name>/ a wl_def.json"
-            " and all associated files are stored (untarred and un-gzipped as needed) where <path>"
-            " is the value provided to the --path argument."
+            "Filter versions by date: use '<2024-01-15' or '>2024-01-01' (Linux/macOS shells), "
+            "or 'lt:2024-01-15'/'gt:2024-01-01' (Windows-friendly); format: YYYY-MM-DD"
         ),
+    )
+    filter_version_args.add_argument(
+        "--version-list-filter",
+        metavar="RANGE",
+        help="Filter versions by range (Python slicing): '0:5' (first 5), '-5:' (last 5), '3' (4th version)",
+    )
+
+
+def args_ms_workloads(parser):
+    action_parser = parser.add_subparsers(
+        dest="ms_workloads_action", required=True, help="Available ms_workloads actions"
+    )
+
+    list_parser = action_parser.add_parser(
+        "list",
+        help="List workloads and versions from Management System and save to OUTPUT.",
+    )
+    list_parser.set_defaults(ms_workloads_action="list")
+    list_parser.add_argument(
+        "--output",
+        metavar="DESTINATION",
+        default="workloads.json",
+        help=(
+            "Output destination: FILE path (e.g., 'output.json', '/path/to/file.json'), "
+            "stdout:json, stdout:yaml, or stdout:key (e.g., stdout:name, stdout:_id)"
+        ),
+    )
+    list_parser.add_argument(
+        "--skip-validation",
+        action="store_true",
+        help="Skip validation of workload details when listing workloads (faster, but may miss errors)",
+    )
+    args_ms_workloads_list(list_parser)
+    args_ms_workloads_list_versions(list_parser)
+
+    export_parser = action_parser.add_parser(
+        "export",
+        help="Download workloads and versions from INPUT to PATH/WORKLOAD_NAME/VERSION_NAME/.",
+    )
+    export_parser.set_defaults(ms_workloads_action="export")
+    export_parser.add_argument(
+        "export",
+        metavar="PATH",
+        help=(
+            "Download workloads/versions from INPUT to PATH/WORKLOAD_NAME/VERSION_NAME/ "
+            "(absolute PATH supported; includes definition and files)"
+        ),
+    )
+    export_parser.add_argument(
+        "--input",
+        metavar="SOURCE",
+        default="workloads.json",
+        help=(
+            "Input source for workloads: FILE path (e.g., 'workloads.json', '/path/to/file.json'), "
+            "stdin:json, stdin:yaml, name:workload1,workload2, or _id:id1,id2"
+        ),
+    )
+    export_parser.add_argument(
+        "--template",
+        action="store_true",
+        help=(
+            "Export only the workload definition (and docker-compose file if applicable) without"
+            " including the workload files (e.g., docker images, CODESYS packages)"
+        ),
+    )
+    args_ms_workloads_list_versions(export_parser)
+
+    provision_parser = action_parser.add_parser(
+        "provision",
+        help="Upload workloads from INPUT to Management System using PATH for workload files.",
+    )
+    provision_parser.set_defaults(ms_workloads_action="provision")
+    provision_parser.add_argument(
+        "provision",
+        metavar="PATH",
+        help=(
+            "Upload workloads from INPUT to Management System using PATH for workload files "
+            "(absolute PATH supported; supports comma-separated paths)"
+        ),
+    )
+    provision_parser.add_argument(
+        "--input",
+        metavar="SOURCE",
+        default="workloads.json",
+        help=(
+            "Input source for workloads: FILE path (e.g., 'workloads.json', '/path/to/file.json'), "
+            "stdin:json, stdin:yaml, name:workload1,workload2, or _id:id1,id2"
+        ),
+    )
+    provision_parser.add_argument(
+        "--registry",
+        help="Provision docker/docker-compose as registry workloads (docker registry source)",
         action="store_true",
     )
-    action_group.add_argument(
-        "--paste",
-        help="Paste the workloads or versions specified in 'file' to the management system",
+    provision_parser.add_argument(
+        "--legacy",
+        help="Provision docker/docker-compose as legacy workloads (older format)",
         action="store_true",
     )
-    action_group.add_argument(
-        "--delete", help="Delete the workloads or versions specified in 'file'", action="store_true"
+    args_ms_workloads_list_versions(provision_parser)
+
+    delete_parser = action_parser.add_parser(
+        "delete",
+        help="Delete workloads and versions specified in INPUT from Management System.",
     )
-    action_group.add_argument(
-        "--deploy",
-        help="Deploy the workload version defined in 'file' to the nodes (within 'nodes_file')",
-        action="store_true",
+    delete_parser.set_defaults(ms_workloads_action="delete")
+    delete_parser.add_argument(
+        "--input",
+        metavar="SOURCE",
+        default="workloads.json",
+        help=(
+            "Input source for workloads: FILE path (e.g., 'workloads.json', '/path/to/file.json'), "
+            "stdin:json, stdin:yaml, name:workload1,workload2, or _id:id1,id2"
+        ),
     )
+    args_ms_workloads_list_versions(delete_parser)
+
+    deploy_parser = action_parser.add_parser(
+        "deploy",
+        help="Deploy workloads from INPUT to NODES.",
+    )
+    deploy_parser.set_defaults(ms_workloads_action="deploy")
+    deploy_parser.add_argument(
+        "deploy",
+        metavar="NODES",
+        help=(
+            "Deploy workloads from INPUT to NODES. NODES: FILE path, stdin:json, stdin:yaml, "
+            "name:node1,node2, or serialNumber:serial1"
+        ),
+    )
+    deploy_parser.add_argument(
+        "--input",
+        metavar="SOURCE",
+        default="workloads.json",
+        help=(
+            "Input source for workloads: FILE path (e.g., 'workloads.json', '/path/to/file.json'), "
+            "stdin:json, stdin:yaml, name:workload1,workload2, or _id:id1,id2"
+        ),
+    )
+    deploy_parser.add_argument("--wait", help="Wait until deployment completes", action="store_true")
+    args_ms_workloads_list_versions(deploy_parser)
 
 
-def _ms_workloads_single_copy(  # noqa: PLR0912, PLR0914, PLR0915
-    ms_workloads, args, wl_name, wl_internal_registry, wl_type, filtered_versions, log
-):
-    def create_ms_workloads_path(work_dir, path):
-        """Create the path for storing the workloads files."""
-        if not path:
-            return
-        full_path = os.path.join(work_dir, path)
-        if not os.path.exists(full_path):
-            os.makedirs(full_path)
-        return
-
-    def reorder_wl_def_files(wl_definition: dict) -> tuple[dict, bool]:
-        """Move all XML file entries to the end if non-XML files are present.
-        Returns the potentially modified wl_definition and whether the file order changed.
-        """
-        versions = wl_definition.get("versions")
-        if not isinstance(versions, list) or not versions:
-            return wl_definition, False
-
-        files = versions[0].get("files")
-        if not isinstance(files, list) or len(files) < 2:  # noqa: PLR2004
-            return wl_definition, False
-
-        def is_xml_file(file_entry: dict) -> bool:
-            file_name = (file_entry.get("originalName") or file_entry.get("name") or "").lower()
-            return file_name.endswith(".xml")
-
-        xml_files = [file_entry for file_entry in files if is_xml_file(file_entry)]
-        non_xml_files = [file_entry for file_entry in files if not is_xml_file(file_entry)]
-
-        # Reorder only when both groups exist; keep relative order within each group.
-        if not xml_files or not non_xml_files:
-            return wl_definition, False
-
-        reordered_files = non_xml_files + xml_files
-        changed = reordered_files != files
-        if changed:
-            versions[0]["files"] = reordered_files
-
-        return wl_definition, changed
-
-    if not filtered_versions:
-        return
-
-    # retrieve all workload version details and overwrite the filtered versions
-    for i, version in enumerate(filtered_versions):  # noqa: PLR1702
-        if not version.get("releaseName"):
-            version.update({"releaseName": ""})
-        if wl_internal_registry == True or wl_type == "docker-compose":
-            api_version = 3
-        else:
-            api_version = 2
-        container = ms_workloads.WorkloadVersion(
-            wl_name, version["name"], version.get("releaseName")
-        ).get_container(api_version=api_version)
-        detailed_version = container.get("versions")[0]
-        filtered_versions[i] = detailed_version
-
-        release_version = (
-            f"_{detailed_version.get('releaseName', '')}" if detailed_version.get("releaseName") else ""
-        )
-        save_path = os.path.join(args.path, wl_name, f"{detailed_version['name']}{release_version}")
-        create_ms_workloads_path(args.work_dir, save_path)
-
-        file_write(os.path.join(args.work_dir, save_path), "wl_def.json", container)
-
-        wl_version = ms_workloads.WorkloadVersion(wl_name, version["name"], version.get("releaseName"))
-        response = wl_version.export_workload_version(api_version=api_version)
-        file_name = (
-            response.headers
-            .get("Content-Disposition", "attachment; filename=workload_file")
-            .split("filename=")[-1]
-            .strip('"')
-        )
-
-        destination_path = os.path.join(args.work_dir, save_path, file_name)
-        if os.path.exists(destination_path):
-            destination_path = os.path.join(args.work_dir, save_path, file_name)
-
-        # Save the file to the specified path in chunks to handle large files
-        with open(destination_path, "wb") as dest_file:
-            for chunk in response.iter_content(chunk_size=8192):  # Stream in 8KB chunks
-                if chunk:  # Filter out keep-alive new chunks
-                    dest_file.write(chunk)
-        log.info("Downloaded and saved file: %s", file_name)
-        # untar the file
-        files_contained = []
-        if file_name.endswith((".tar.gz", ".tgz")):
-            log.info("Extracting tar-gzipped file: %s (%s)", destination_path, file_name)
-            with tarfile.open(destination_path, "r:gz") as tar:
-                tar.extractall(path=os.path.join(args.work_dir, save_path))
-                files_contained = tar.getnames()
-            log.debug("Extracted files: %s", files_contained)
-        if file_name.endswith(".tar"):
-            with tarfile.open(destination_path, "r:") as tar:
-                tar.extractall(path=os.path.join(args.work_dir, save_path))
-                files_contained = tar.getnames()
-            log.debug("Extracted files: %s", files_contained)
-        os.remove(destination_path)
-        json_content = None
-        for file in files_contained:
-            if file.endswith(".gz"):
-                full_file_path = os.path.join(args.work_dir, save_path, file)
-                log.info("Extracting gzipped file: %s (%s)", full_file_path, file)
-                extracted_file = os.path.splitext(full_file_path)[0]
-                with gzip.open(full_file_path, "rb") as f_in, open(extracted_file, "wb") as f_out:
-                    shutil.copyfileobj(f_in, f_out)
-                log.debug("Extracted gzipped file: %s", extracted_file)
-                os.remove(full_file_path)
-            if file.endswith(".json"):
-                log.info("JSON file included: %s", file)
-                json_content = file_read(os.path.join(args.work_dir, save_path), file)
-                wl_def_content = file_read(os.path.join(args.work_dir, save_path), "wl_def.json")
-
-                if json_content["type"] == "docker-compose":
-                    if not wl_def_content["versions"][0].get("workloadSpecificProperties"):
-                        wl_def_content["versions"][0]["workloadSpecificProperties"] = json_content[
-                            "version"
-                        ].get("workloadSpecific", [{}])[0]
-                    if not wl_def_content["versions"][0].get("selectors"):
-                        wl_def_content["versions"][0]["selectors"] = json_content["version"].get(
-                            "selectors", []
-                        )
-                    if not wl_def_content["versions"][0].get("remoteConnections"):
-                        wl_def_content["versions"][0]["remoteConnections"] = json_content["version"].get(
-                            "remoteConnections", []
-                        )
-                elif wl_def_content["type"] == "vm":
-                    log.debug(
-                        "Reordering file pathes for VM workload to ensure .xml file isnt first if present"
-                    )
-                    wl_def_content, wl_def_changed = reorder_wl_def_files(wl_def_content)
-                    if wl_def_changed:
-                        abs_wl_def_file_path = os.path.join(args.work_dir, save_path, "wl_def.json")
-                        with open(abs_wl_def_file_path, "w", encoding="utf-8") as wl_def_file:
-                            json.dump(wl_def_content, wl_def_file, indent=4)
-                        log.debug("Updated wl_def file order and overwrote %s", abs_wl_def_file_path)
-
-                file_write(
-                    os.path.join(args.work_dir, save_path), "wl_def.json", clean_wl_definition(wl_def_content)
-                )
-
-        if json_content:
-            for file_info in json_content["version"].get("files", []):
-                name = (
-                    file_info["name"].rsplit(".gz", 1)[0]
-                    if file_info["name"].endswith(".gz")
-                    else file_info["name"]
-                )
-                original_name = file_info["originalName"]
-                # for docker registry workloads
-                if original_name.startswith("registry/"):
-                    original_name = os.path.basename(original_name).split(":", -1)[0] + file_info.get(
-                        "type", ".tar"
-                    )
-                # move file with name to original name
-                if (
-                    name
-                    and original_name
-                    and name != original_name
-                    and os.path.exists(os.path.join(args.work_dir, save_path, name))
-                ):
-                    os.rename(
-                        os.path.join(args.work_dir, save_path, name),
-                        os.path.join(args.work_dir, save_path, original_name),
-                    )
-                    log.info("Renamed file %s to %s", name, original_name)
-                # if there is no original name specified in the JSON
-                if (
-                    name
-                    and not original_name
-                    and os.path.exists(os.path.join(args.work_dir, save_path, name))
-                ):
-                    log.warning("File '%s' has no original name specified in the JSON", name)
-                    if file_info["sourceInfo"].get("file"):
-                        original_name = file_info["sourceInfo"].get("file").split("/")[-1].split(":")[0]
-                        if "." in name:
-                            if name.endswith(".gz"):
-                                file_suffix = "." + name.split(".")[-2] + "." + name.split(".")[-1]
-                            else:
-                                file_suffix = "." + name.split(".")[-1]
-                        else:
-                            file_suffix = ""
-                        log.debug("Trying to rename file %s to %s based on sourceInfo", name, original_name)
-                        if file_suffix:
-                            os.rename(
-                                os.path.join(args.work_dir, save_path, name),
-                                os.path.join(args.work_dir, save_path, original_name + file_suffix),
-                            )
-                            log.info("Renamed file %s to %s", name, original_name + file_suffix)
-                        else:
-                            log.warning(
-                                "Could not determine file suffix for file '%s', keeping the name as is", name
-                            )
+def _get_ms_workloads_action(args):
+    return getattr(args, "ms_workloads_action", "")
 
 
-def _ms_workloads_copy(ms_workloads, args, log=None):
-    for workload in file_read(args.work_dir, args.file):
-        wl_name = workload["name"]
-        wl_type = workload["type"]
-        wl_internal_registry = workload.get("internalDockerRegistry", False)
-        _ms_workloads_single_copy(
-            ms_workloads, args, wl_name, wl_internal_registry, wl_type, workload["versions"], log
-        )
-
-
-def _ms_workloads_list(ms_workloads, args, log=None):  # noqa: PLR0915
-    def filter_versions(workload, args):
-        versions = workload["versions"]
-        versions = [v for v in versions if check_filter_arg(args.version_name, v["name"])]
-        versions = [v for v in versions if check_filter_arg(args.version_release_name, v.get("releaseName"))]
-
-        for wl_version in versions:
-            overall_size = 0
-            for file in wl_version.get("files", []):
-                overall_size += int(file["size"])
-            wl_version["overall_size"] = overall_size
-
-        if args.version_size_above:
-            result_versions = []
-            for wl_version in versions:
-                allowed_maximum = size_string_to_bytes(args.version_size_above)
-                if wl_version["overall_size"] > allowed_maximum:
-                    result_versions.append(wl_version)
-            versions = deepcopy(result_versions)
-
-        if args.version_date_older_than:
-            result_versions = []
-            for wl_version in versions:
-                # get latest date from 'createdAt' or 'updatedAt'
-                latest_mofification_date = datetime.strptime(
-                    wl_version["createdAt"], "%Y-%m-%dT%H:%M:%S.%fZ"
-                ).astimezone(UTC)
-                if "updatedAt" in wl_version:
-                    latest_mofification_date = datetime.strptime(
-                        wl_version["updatedAt"], "%Y-%m-%dT%H:%M:%S.%fZ"
-                    ).astimezone(UTC)
-
-                allowed_date = datetime.strptime(args.version_date_older_than, "%Y-%m-%d").astimezone(UTC)
-                if latest_mofification_date < allowed_date:
-                    result_versions.append(wl_version)
-            versions = deepcopy(result_versions)
-
-        if args.version_list_filter:
-            # sort versions by createdAt date descending
-            versions_sorted = sorted(
-                versions,
-                key=lambda v: datetime.strptime(v["createdAt"], "%Y-%m-%dT%H:%M:%S.%fZ").astimezone(UTC),
-                reverse=False,
-            )
-            # apply slicing
-            try:
-                slice_parts = args.version_list_filter.split(":")
-                if len(slice_parts) == 2:  # noqa: PLR2004
-                    start = int(slice_parts[0]) if slice_parts[0] else None
-                    end = int(slice_parts[1]) if slice_parts[1] else None
-                    versions = versions_sorted[start:end]
-                elif len(slice_parts) == 1:
-                    index = int(slice_parts[0])
-                    versions = [versions_sorted[index]]
-                else:
-                    raise ValueError("invalid")
-            except ValueError:
-                raise ValueError("Invalid version_list_filter format, provide start:end or index as integer")
-
-        return versions
-
-    def human_readable_output(wl_type, versions, wl_internal_registry):
-        log.info(
-            "%s%s Workload '%s' (%s):",
-            wl_type,
-            " (internal registry)" if wl_internal_registry else "",
-            wl_name,
-            wl_id,
-        )
-
-        for wl_version in versions:
-            v_name = wl_version["name"]
-            v_release_name = wl_version.get("releaseName", None)
-            version_str = (
-                f"'{v_name}'/'{v_release_name}'"
-                if v_release_name and v_name != v_release_name
-                else f"'{v_name}'"
-            )
-            version_size_str = "0B"
-            if "overall_size" in wl_version:
-                version_size_str = format_size_string(wl_version["overall_size"])
-
-            container_name_str = ""
-            if wl_type == "docker":
-                if "workloadProperties" in wl_version:
-                    container_name_str = (
-                        f" Container name: '{wl_version['workloadProperties'].get('container_name', '')}'"
-                    )
-                elif "workloadSpecificProperties" in wl_version:
-                    container_name_str = f" Container name: '{wl_version['workloadSpecificProperties'].get('container_name', '')}'"
-
-            log.info(
-                "    Version %s (%s)%s",
-                version_str,
-                version_size_str,
-                container_name_str,
-            )
-
+def ms_workloads_list(ms_workloads, args, log):
+    """List workloads and their details from the management system based on the provided filters and store results to 'output'"""
     # ms_workloads_list main function
     output = []
 
@@ -479,83 +243,112 @@ def _ms_workloads_list(ms_workloads, args, log=None):  # noqa: PLR0915
     )
 
     # apply workload level filters
+    workloads_filtered = []
     for workload in wl_list:
         wl_name = workload["name"]
         if not check_filter_arg(args.name, wl_name):
             continue
 
-        wl_id = workload["_id"]
-        if not check_filter_arg(args.id, wl_id):
-            continue
-
         if not args.disabled and check_filter_arg(True, workload["disabled"]):
             continue
 
-        # apply version level filters
-        filtered_versions = filter_versions(workload, args)
-        if not filtered_versions:
-            continue
-        log.debug("Filtered versions for workload '%s': %s", wl_name, filtered_versions)
+        workloads_filtered.append(workload)
 
-        wl_internal_registry = workload.get("internalDockerRegistry", False)
-        human_readable_output(workload["type"], filtered_versions, wl_internal_registry)
-
-        wl_output = deepcopy(workload)
-        wl_output["versions"] = filtered_versions
-        output.append(wl_output)
+    output = normalize_workloads_input(workloads_filtered, args, ms_workloads, log)
+    human_readable_output(output, log)
 
     # Check if all workload details can be read successfully
     failed_count = 0
-    for workload in output:
-        for version in workload["versions"]:
-            try:
-                if workload.get("type") == "docker-compose" or (
-                    workload.get("type") == "docker" and workload.get("internalDockerRegistry")
-                ):
-                    ms_workloads.WorkloadVersion(
-                        workload["name"], version["name"]
-                    ).get_additional_version_details()
-            except CheckStatusCodeError as ex_msg:
-                log.warning(
-                    "Failed to read details for workload '%s', version '%s': %s",
-                    workload["name"],
-                    version["name"],
-                    ex_msg,
-                )
-                failed_count += 1
+    if not args.skip_validation:
+        failed_count = validate_ms_workload_read_error(output, ms_workloads, log)
 
-    file_write(args.work_dir, args.file, output)
+    file_write(args.work_dir, args.output, output, output_methods=["stdout", "key", "file"])
     if not output:
         log.warning("No workloads found with the provided filters")
         return 1
     return failed_count
 
 
-def _ms_workloads_delete(ms_workloads, args, log=None):
-    for workload in file_read(args.work_dir, args.file):
+def ms_workloads_delete(ms_workloads, workloads, args, log=None):
+    num_versions = sum(len(workload.get("versions", [])) for workload in workloads)
+    if len(workloads) == 0:
+        log.error("No workloads found to delete with the provided filters")
+        return 1
+    perform_action = ask_for_confirmation(
+        args,
+        f"Are you sure you want to delete {len(workloads)} workload(s) with a total of {num_versions} version(s) from the management system?",
+    )
+
+    for workload in workloads:
         for version in workload["versions"]:
+            if not perform_action:
+                log.info(
+                    "Skipping deletion of workload '%s' version '%s'",
+                    workload["name"],
+                    version["name"],
+                )
+                continue
             try:
                 wl_version = ms_workloads.WorkloadVersion(
                     workload["name"], version["name"], version.get("releaseName")
                 )
                 wl_version.delete_workload_version()
             except ValueError as ex_msg:
+                if "Workload with name" in str(ex_msg) and "not found" in str(ex_msg):
+                    log.warning(
+                        "Workload '%s' version '%s' not found on the management system, skipping deletion",
+                        workload["name"],
+                        version["name"],
+                    )
+                    continue
                 raise ValueError(f"Workload version cannot be removed: {ex_msg}")
         wl_version = ms_workloads.WorkloadVersion(workload["name"])
-        if not wl_version._get_versions():
-            # all sub-version had been removed, deleting also the workload
-            wl_version.delete_workload()
+        try:
+            if not wl_version._get_versions():
+                if not perform_action:
+                    log.info(
+                        "Skipping deletion of workload '%s' as it has no more versions after deletion",
+                        workload["name"],
+                    )
+                    continue
+                # all sub-version had been removed, deleting also the workload
+                wl_version.delete_workload()
+        except ValueError as ex_msg:
+            if "Workload with name" in str(ex_msg) and "not found" in str(ex_msg):
+                log.warning(
+                    "Workload '%s' not found on the management system, skipping deletion",
+                    workload["name"],
+                )
+                continue
+            raise ValueError(f"Workload cannot be removed: {ex_msg}")
+    return 0
 
 
-def _ms_workloads_deploy(ms_workloads, ms_nodes, args, log=None):
-    nodes = file_read(args.work_dir, args.nodes_file)
-    workloads = file_read(args.work_dir, args.file)
-
+def ms_workloads_deploy(ms_workloads, workloads, ms_nodes, args, log=None):
+    nodes = normalize_nodes_input(
+        file_read(args.work_dir, args.deploy, input_methods=["stdin", "name", "serialNumber", "_id", "file"]),
+        ms_nodes,
+    )
     node_list = []
 
-    for node in nodes:
-        node_handle = ms_nodes.Node(node["serialNumber"])
-        node_list.append(node_handle)
+    num_nodes = len(nodes)
+    num_workloads = len(workloads)
+    if num_workloads == 0 or num_nodes == 0:
+        log.error(
+            "No workloads or nodes defined to deploy. # Workloads found: %d, # Nodes found: %d with the provided filters",
+            num_workloads,
+            num_nodes,
+        )
+        return 1
+    perform_action = ask_for_confirmation(
+        args,
+        f"Are you sure you want to deploy {num_workloads} workload(s) to {num_nodes} node(s)?",
+    )
+
+    if perform_action:
+        for node in nodes:
+            node_handle = ms_nodes.Node(node["serialNumber"])
+            node_list.append(node_handle)
 
     for workload in workloads:
         if len(workload.get("versions", [])) > 1:
@@ -578,193 +371,23 @@ def _ms_workloads_deploy(ms_workloads, ms_nodes, args, log=None):
             wl_version = ms_workloads.WorkloadVersion(
                 workload["name"], version["name"], version.get("releaseName")
             )
+
+        if not perform_action:
+            log.info(
+                "Skipping deployment of workload '%s' version '%s' to nodes '%s'",
+                workload["name"],
+                version["name"],
+                ",".join(node["name"] for node in nodes),
+            )
+            continue
         if args.wait:
             wl_version.deploy_full(node_list)
         else:
             wl_version.deploy(node_list)
+    return 0
 
 
-def _ms_workloads_paste(ms_workloads, args, log=None):  # noqa: PLR0912, PLR0914, PLR0915
-    workloads = file_read(args.work_dir, args.file) or []
-
-    def parse_yml_for_images(yml_path, target_url):
-        """Parse the YML file to extract repository and tag information from 'image' keys."""
-        with open(yml_path, "r", encoding="utf-8") as f:
-            data = yaml.safe_load(f)
-        images = []
-        if "services" in data:
-            for service in data["services"].values():
-                if "image" in service:
-                    image = service["image"]
-                    if ":" in image:
-                        repo, tag = image.rsplit(":", 1)
-                    else:
-                        repo = image
-                        tag = "latest"
-                    images.append((repo, tag))
-        return images
-
-    def create_modified_yml(yml_path, target_url):
-        """Create a modified copy of the YML file with updated image URLs."""
-        with open(yml_path, "r", encoding="utf-8") as f:
-            data = yaml.safe_load(f)
-        if "services" in data:
-            for service in data["services"].values():
-                if "image" in service:
-                    image = service["image"]
-                    if "/registry/" in image:
-                        repo_part = image.split("/registry/")[0]
-                        service["image"] = image.replace(repo_part, target_url, 1)
-                    else:
-                        service["image"] = target_url + "/registry/" + image
-        # overwrite the original yml file
-        with open(yml_path, "w", encoding="utf-8") as f:
-            yaml.dump(
-                data,
-                f,
-                default_flow_style=False,
-                allow_unicode=True,
-                sort_keys=False,
-                indent=4,
-                encoding=None,
-            )
-        return yml_path
-
-    def modify_wl_def_registry_type(wl_def_file_path, wl_def, workloadtype):
-        log.debug("Modifying wl_def '%s' for workload type '%s'", wl_def_file_path, workloadtype)
-        if workloadtype == "registry":
-            wl_def["internalDockerRegistry"] = True
-        elif workloadtype == "legacy":
-            wl_def["internalDockerRegistry"] = False
-        with open(wl_def_file_path, "w", encoding="utf-8") as f:
-            json.dump(wl_def, f, indent=4)
-        return wl_def
-
-    def create_individual_workload(wl_def, wl_file_paths: list):
-        if type(wl_def) is not dict:
-            raise TypeError("Workload definition must be a dictionary")
-        if wl_def["type"] == "docker-compose" or wl_def.get("internalDockerRegistry") == True:
-            api_version = 3
-        else:
-            api_version = 2
-
-        search_pathes = [posixpath.join(args.work_dir, file_path) for file_path in wl_file_paths]
-        file_pathes = []
-        for search_path in search_pathes:
-            file_pathes += sorted([file_path.as_posix() for file_path in Path.cwd().glob(search_path)])
-        log.debug("Working with file pathes: \n    - %s", "\n    - ".join(file_pathes))
-        wl = clean_wl_definition(wl_def)
-        ms_workloads.provision_workload(wl, file_pathes, api_version)
-
-    for workload in workloads:  # noqa: PLR1702
-        wl_name = workload["name"]
-        wl_type = workload["type"]
-
-        log.info(
-            "Pasting Workload to MS '%s' (%s)...",
-            wl_name,
-            wl_type,
-        )
-
-        for version in workload["versions"]:
-            version_name = version["name"]
-            version_release_name = f"_{version.get('releaseName', '')}" if version.get("releaseName") else ""
-            log.info(
-                "    Version '%s%s'...",
-                version_name,
-                version_release_name,
-            )
-            wl_file_root_path = os.path.join(args.path, wl_name, f"{version_name}{version_release_name}")
-            wl_def_file_path = os.path.join(wl_file_root_path, "wl_def.json")
-            wl_def = file_read(args.work_dir, wl_def_file_path)
-            wl_file_paths = []
-            wl_root_path = Path(os.path.join(args.work_dir, wl_file_root_path))
-            if wl_type == "docker-compose":
-                if wl_def.get("internalDockerRegistry") == False and args.registry:
-                    wl_def = modify_wl_def_registry_type(
-                        os.path.join(args.work_dir, wl_def_file_path), wl_def, "registry"
-                    )
-                elif wl_def.get("internalDockerRegistry") == True and args.legacy:
-                    wl_def = modify_wl_def_registry_type(
-                        os.path.join(args.work_dir, wl_def_file_path), wl_def, "legacy"
-                    )
-                wl_root_path = Path(os.path.join(args.work_dir, wl_file_root_path))
-                # use all tar files and yml files in the folder as workload files for docker-compose workloads
-                for pattern in ("*.tar", "*.tar.gz"):
-                    for file_path in wl_root_path.glob(pattern):
-                        wl_file_paths.append(str(file_path.relative_to(args.work_dir)))
-                if wl_def.get("internalDockerRegistry") == True:
-                    target_url = ms_workloads.ms.ms_url
-                    yml_files = list(wl_root_path.glob("*.yml")) or list(wl_root_path.glob("*.yaml"))
-                    for yml_file in yml_files:
-                        modified_yml = create_modified_yml(str(yml_file), target_url)
-                        wl_file_paths.append(str(Path(modified_yml).relative_to(args.work_dir)))
-                    for file_path in wl_file_paths[:]:
-                        if file_path.endswith((".yml", ".yaml")):
-                            yml_path = os.path.join(args.work_dir, file_path)
-                            images = parse_yml_for_images(yml_path, target_url)
-                            log.debug("Parsed images from YML: %s", images)
-                            for repo, tag in images:
-                                docker_registry_workflow(args.work_dir, wl_file_paths, repo, tag)
-                    for file_path in wl_file_paths[:]:
-                        if not file_path.endswith((".yml", ".yaml")):
-                            wl_file_paths.remove(file_path)
-                else:
-                    # if not using internal Docker registry, include all yml and yaml files
-                    for pattern in ("*.yml", "*.yaml"):
-                        for file_path in wl_root_path.glob(pattern):
-                            wl_file_paths.append(str(file_path.relative_to(args.work_dir)))
-            elif wl_type == "docker" and wl_def.get("internalDockerRegistry") == True:
-                for pattern in ("*.tar", "*.tar.gz", "*.json"):
-                    for file_path in wl_root_path.glob(pattern):
-                        wl_file_paths.append(str(file_path.relative_to(args.work_dir)))
-                target_url = ms_workloads.ms.ms_url
-                images = []
-                for file_path in wl_file_paths[:]:
-                    log.debug("Checking file '%s' for docker image information", file_path)
-                    if file_path.endswith(".json") and not file_path.endswith("wl_def.json"):
-                        log.debug("Reading JSON file from %s, %s", args.work_dir, file_path)
-                        json_content = file_read(args.work_dir, file_path)
-                        if json_content:
-                            log.debug("Read JSON succcess")
-                            if json_content["type"] == "docker":
-                                for file_info in json_content["version"].get("files", []):
-                                    if file_info["sourceInfo"]["type"] == "docker-image":
-                                        repo, tag = file_info["sourceInfo"]["source"].split(":")
-                                        images.append((repo, tag))
-                log.debug("Parsed images from JSON files: %s", images)
-                for repo, tag in images:
-                    repo_mod = (
-                        target_url + "/registry/" + repo.split("registry/")[-1]
-                    )  # results in "<ms_url>/registry/<wl-name>"
-                    log.debug("Processing image with repo '%s' and tag '%s'", repo_mod, tag)
-                    docker_registry_workflow(args.work_dir, wl_file_paths, repo, tag)
-                for file_path in wl_file_paths[:]:
-                    if not file_path.endswith(".json"):
-                        wl_file_paths.remove(file_path)
-            else:
-                for file in version.get("files", []):
-                    file_path = os.path.join(wl_file_root_path, file["originalName"])
-                    if os.path.exists(os.path.join(args.work_dir, file_path)):
-                        wl_file_paths.append(file_path)
-                    else:
-                        raise FileNotFoundError(
-                            "File '%s' defined in workload version '%s' not found at path '%s'",
-                            file["name"],
-                            version_name,
-                            file_path,
-                        )
-
-            log.info(
-                "Found files for workload '%s', version '%s': \n    - %s",
-                wl_name,
-                version_name,
-                "\n    - ".join(wl_file_paths),
-            )
-            create_individual_workload(wl_def, wl_file_paths)
-
-
-def ms_workloads(ms_workloads, ms_nodes, arg, log=None):
+def ms_workloads(parent, arg, log=None):
     log = log.getChild(__name__.split(".")[-1]) if log else logging.getLogger(__name__)
     args = args_interactive(
         arg,
@@ -772,19 +395,43 @@ def ms_workloads(ms_workloads, ms_nodes, arg, log=None):
         "Operate on workloads of the management system.",
     )
     if not args:
-        log.error("Failed to parse arguments")
         return 2
 
-    if args.copy:
-        return _ms_workloads_copy(ms_workloads, args, log)
-    if args.list:
-        return _ms_workloads_list(ms_workloads, args, log)
-    if args.paste:
-        return _ms_workloads_paste(ms_workloads, args, log)
-    if args.delete:
-        return _ms_workloads_delete(ms_workloads, args, log)
-    if args.deploy:
-        return _ms_workloads_deploy(ms_workloads, ms_nodes, args, log)
+    ms_workloads = parent.ms_workloads
+    ms_nodes = parent.ms_nodes
+    args.work_dir = parent.args.work_dir
+    args.yes = parent.args.yes
+    args.dry_run = parent.args.dry_run
+    action = _get_ms_workloads_action(args)
+
+    if action == "list":
+        return ms_workloads_list(ms_workloads, args, log)
+
+    if action == "provision":
+        return ms_workloads_provision(
+            ms_workloads,
+            file_read(args.work_dir, args.input, input_methods=["stdin", "name", "file"]),
+            args,
+            log,
+        )
+
+    workloads = normalize_workloads_input(
+        file_read(args.work_dir, args.input, input_methods=["stdin", "name", "_id", "file"]),
+        args,
+        ms_workloads,
+        log,
+    )
+    if action == "export":
+        return ms_workloads_export(ms_workloads, workloads, args, log)
+    if action == "delete":
+        return ms_workloads_delete(ms_workloads, workloads, args, log)
+    if action == "deploy":
+        if args.input.startswith("stdin:") and args.deploy.startswith("stdin:"):
+            raise ValueError(
+                "Cannot read both workloads and nodes from stdin for deployment."
+                " Please provide at least one of them via file input or direct definitions to avoid ambiguity."
+            )
+        return ms_workloads_deploy(ms_workloads, workloads, ms_nodes, args, log)
 
     log.error("No valid action specified")
     return 2

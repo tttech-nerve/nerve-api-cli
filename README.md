@@ -2,7 +2,7 @@
     <img src="./img/logo-nerve-black.svg" alt="Nerve"/><b>&nbsp;API CLI</b><br><br>
     <a href="./LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg"/></a>
     <a href="https://docs.python.org/3/"><img src="https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13%20%7C%203.14-blue.svg"/></a>
-    <a href="https://docs.nerve.cloud"><img src="https://img.shields.io/badge/nerve-2.9%20%7C%202.10%20%7C%203.0%20%7C%203.1%20%7C%203.1.1-blue.svg"/></a>
+    <a href="https://docs.nerve.cloud"><img src="https://img.shields.io/badge/nerve-2.9%20%7C%202.10%20%7C%203.0%20%7C%203.1.1-blue.svg"/></a>
 </p>
 
 The *Nerve API CLI* provides a command line interface to the REST API of a [Nerve Management System](https://docs.nerve.cloud). It is essentially a command line wrapper for some parts of the [*nerve_lib*](https://github.com/tttech-nerve/nerve-api-python) and can be used to integrate *Nerve* related workflows into a build pipeline and automate common tasks such as workload creation and deployment. Since the CLI does only cover a subset of functions provided by the *[*nerve_lib*](https://github.com/tttech-nerve/nerve-api-python.git)* please refer to the library directly if additional flexibility or functionality is needed.
@@ -22,7 +22,7 @@ curl -sSL https://install.python-poetry.org | python3 -
 
 Install the dependencies: `poetry install`
 
-Check if everything works as intended: `poetry run python -m nerve_cli --help`
+Check if everything works as intended: `poetry run nerve-cli --help`
 
 
 Optional: Activate the environment and use the command-line entry-point
@@ -47,52 +47,48 @@ The individual Python files are structured along the objects they work on. To ac
 
 ## Command-line use
 
-Start the function running `nerve.py` with arguments. See `--help` for usage details or refer to the help output below:
+Run `nerve-cli` with arguments. See `--help` for usage details or refer to the help output below:
 
 ```
-usage: nerve-cli [-h] [--ms_url <MS_url>] [--ms_user <MS_username>] [--ms_password <MS_password>] [--work_dir <directory>] [--log_level {TRACE,DEBUG,INFO,WARNING,ERROR,CRITICAL}] [--store_credentials]
-                 {cli,workload_create,ms_workloads,nodes_list,nodes_reboot,nodes_dna,service_os_dna,nodes_workloads_state,nodes_remote_connections,labels,docker_volumes} ...
+usage: nerve-cli [-h] [--yes] [--dry-run] [--ms-url URL] [--ms-user USERNAME] [--ms-password PASSWORD] [--work-dir PATH]
+                 [-v] [--store-credentials]
+                 {cli,template,ms-workloads,ms-nodes,ms-labels,local-node} ...
 
-Nerve API CLI for deploying applications to devices.
+Nerve API CLI for managing devices, workloads, labels, and remote connections.
 
 positional arguments:
-  {cli,workload_create,ms_workloads,nodes_list,nodes_reboot,nodes_dna,service_os_dna,nodes_workloads_state,nodes_remote_connections,labels,docker_volumes}
-                        Available sub-commands:
-    cli                 Start the interactive CLI
-    workload_create     Create a new workload on the management system. An option allows to create a template.
-    ms_workloads        Create a workloads json file based on filter options, and perform actions on these workloads like deploy or delete.
-    nodes_list          Create a nodes json file based on different filter options.
-    nodes_reboot        Reboot nodes
-    nodes_dna           Nodes DNA functions
-    service_os_dna      Service OS DNA functions
-    nodes_workloads_state
-                        Change the state of all workloads listed in the nodes file
-    nodes_remote_connections
-                        Manage remote tunnels from nodes
-    labels              Manage labels on the management system
-    docker_volumes      Manage docker volumes via local UI or MS API.
+  {cli,template,ms-workloads,ms-nodes,ms-labels,local-node}
+                        Available subcommands:
+    cli                 Start interactive CLI mode.
+    template            Generate templates for workload definitions or remote connections.
+    ms-workloads        Manage workloads on the management system (list, export, provision, delete, deploy).
+    ms-nodes            Manage nodes on the management system (list, reboot, workload state, DNA, remote connections), with
+                        filtering support.
+    ms-labels           Manage labels on the management system.
+    local-node          Manage nodes using local API.
 
 options:
   -h, --help            show this help message and exit
-  --work_dir <directory>
-                        Directory to store temporary files (defaults to work_dir)
-  --log_level {TRACE,DEBUG,INFO,WARNING,ERROR,CRITICAL}
-                        Set the log level (default: INFO)
-  --store_credentials   Store the provided credentials in the credentials.ini file for future use
+  --yes                 Auto-confirm all prompts (skip interactive confirmations)
+  --dry-run             Preview changes without applying them (overrides --yes)
+  --work-dir PATH       PATH TO working directory for temporary files (default: current directory)
+  -v, --verbose         Increase verbosity: -v=INFO, -vv=DEBUG, -vvv=TRACE. Defaults: WARNING for command mode,
+                        INFO for interactive cli mode.
+  --store-credentials   Save credentials to credentials.ini file (security warning: stores plaintext password)
 
 Management System Settings:
-  --ms_url <MS_url>     Url of the Nerve MS. If a credentials.ini file exists with only one section, the MS will be set to this (default to env-var MS_URL)
-  --ms_user <MS_username>
-                        Login user for Nerve MS (user is read from credentials.ini file or defaults to env-var MS_USR)
-  --ms_password <MS_password>
-                        Login password for Nerve MS (password is read from credentials.ini file or defaults to env-var MS_PSW)
+  --ms-url URL          Management System URL (e.g., example-ms.nerve.cloud). Priority: (1) command-line arg, (2) env-var MS_URL (3)
+                        credentials.ini (only if it contains exactly one section)
+  --ms-user USERNAME    Management System login username. Priority: (1) command-line arg, (2) credentials.ini, (3) env-var MS_USR
+  --ms-password PASSWORD
+                        Management System login password. Priority: (1) command-line arg, (2) credentials.ini, (3) env-var MS_PSW
 ```
 
-The credentials may be provided in three different ways:
+The credentials may be provided in three different ways (sorted by priority):
 
-- via command line arguments: `poetry run nerve-cli --ms_url my-management-system.nerve.cloud --ms_user myusername --ms_password mypassword`
-- via environment variables (set the `MS_URL`, `MS_USR`, and `MS_PSW` environment variables). Check the *set_login_environment_vars.sh* script to understand the naming of the variables.
+- via command line arguments: `poetry run nerve-cli --ms-url my-management-system.nerve.cloud --ms-user myusername --ms-password mypassword`
 - via `credentials.ini` file.
+- via environment variables (set the `MS_URL`, `MS_USR`, and `MS_PSW` environment variables). Check the *set_login_environment_vars.sh* script to understand the naming of the variables.
 
 A credentials file must have the following form:
 ```ini
@@ -100,9 +96,10 @@ A credentials file must have the following form:
 username = myusername
 password = mypassword
 ```
+
 The file may also contain multiple sections. The section name, defines the management system URL (without https://).
-When working with multiple Management Systems the use of `credentials.ini` file is recommended. The CLI app argument --ms_url must be defined to work with the correct
-management system, but the passwords will be retrieved from the `credentials.ini` without the need to define them in env-vars or the command-line arguments. To add new entries to to credentials file the `--store_credentials` flag can be used. This will add the credentials provided via command-line arguments to the `credentials.ini` file. If the file does not exist, it will be created.
+When working with multiple Management Systems the use of `credentials.ini` file is convenient but note that the password is stored in plain text, which might create a security risk. The CLI argument `--ms-url` should be defined to work with the correct
+management system, but the passwords will be retrieved from the `credentials.ini` without the need to define them in env-vars or the command-line arguments. To add new entries to the credentials file the `--store-credentials` flag can be used. This will add the credentials provided via command-line arguments to the `credentials.ini` file. If the file does not exist, it will be created.
 
 ### Example Usage
 
@@ -111,51 +108,70 @@ Run `poetry run nerve-cli --help` to get detailed information about all availabl
 When the credentials are defined, any command can be run without performing a login upfront. The [*nerve_lib*](https://github.com/tttech-nerve/nerve-api-python.git) will automatically detect if a new login is required and use the 
 provided credentials if needed.
 
-When a login is triggered can be notices in the command line output when the debug mode is activated `poetry run nerve-cli --log_level DEBUG`. 
+When a login is triggered can be noticed in the command line output when debug mode is activated
+`poetry run nerve-cli -vv`.
 
 
 For example it is possible to perform operations on the Management System such as listing all the Docker workloads that are available on the Management System:
 
 ```bash
-poetry run nerve-cli ms_workloads --list --type docker --file workloads.json
+poetry run nerve-cli ms-workloads list --type docker --output workloads.json
 ```
-This will write the result into the JSON file *workloads.json*. The output on the command line is creating logs in different log-levels. Per default log-level INFO is defined which will show human-readable results of the commands. For more details about the command, check the help with `poetry run nerve_cli ms_workloads --help`.
+This will write the result into the JSON file *workloads.json*. Command mode defaults to log level WARNING.
+Use `-v` for INFO, `-vv` for DEBUG, and `-vvv` for TRACE. Interactive `cli` mode defaults to INFO. For
+more details about the command, check the help with `poetry run nerve-cli ms-workloads -h` and the
+action-specific help with `poetry run nerve-cli ms-workloads list -h`.
 
 Another use case might be to get a list of all nodes where a specific workload version is currently deployed:
 ``` bash
-poetry run nerve-cli nodes_list -wn nginx -wvn v1 --file nodes.json
+poetry run nerve-cli ms-nodes list --name nginx --workload-version-name v1 --output nodes.json
 ```
 This lists all nodes where the workload with the name "nginx" is deployed in version "v1" and saves the output as JSON into the *nodes.json*.
 
-The scripts also provide a workflow to create a new workload. Define the workload via a JSON file. To make it easier to create such a file, a template can be created for different workload types:
+To change the state of workloads on selected nodes, use the dedicated action with a positional `STATE` argument:
 
 ```bash
-poetry run nerve-cli workload_create --template docker --file wl_def_docker.json
+poetry run nerve-cli ms-nodes set-workload-state START --input nodes.json --workload-name nginx
 ```
 
-Open the *work_dir/wl_def_docker.json* file with a text editor and adjust it to your needs to represent the new workload to be created and save it.
-The new workload can now be created on the Management System with the following command.
+To inspect only DNA-related options for workload DNA actions:
 
 ```bash
-poetry run nerve-cli workload_create --create --file wl_def_docker.json --path ../../images/nginx.tar.gz
+poetry run nerve-cli ms-nodes workload-dna -h
 ```
 
-## Creating workloads
-To create a new workload or workload version, a json file with the workload definition as well as the necessary workload files are needed. The easiest way to get a template of the json schema and the files that are needed is to use an existing workload and apply the copy command. This will download and prepare all the necessary files from an existing workload version and place it in the work directory so that all the files can be used to immediately use it to create the workload on e.g. another Management System.
-
-### Example
-Filter for a desired workload that should be used as a template and load it into `work_dir/workloads.json`:
+The scripts also provide a workflow to create a new workload. Start by generating a template for the desired workload type:
 
 ```bash
-nerve-cli --ms_url <url-of-nerve-ms> --ms_user <user> --ms_password <password> ms_workloads -l -n <workload_name> -v <workload_version>
+poetry run nerve-cli template workload docker --output wl_def_docker.json
 ```
 
-Finds the workload with name `workload_name` and version `workload_version` on the Management System and creates a `workloads.json` with the particular workload. Now the copy command can be used (it will be applied to all workloads that are present in the `workloads.json`, so to the one that has just been filtered out).
+Open the *wl_def_docker.json* file with a text editor, adjust it to your needs, and save it.
+The new workload can now be provisioned on the Management System with the following command.
 
 ```bash
-nerve-cli --ms_url <url-of-nerve-ms> --ms_user <user> --ms_password <password> ms_workloads --copy
+poetry run nerve-cli ms-workloads provision workload_folder --input wl_def_docker.json
 ```
-This will create a subfolder in the `work_dir` with all the relevant files that are needed to create the workload that has just been filtered. This can be used as a template to create a new workload, or a new workload version. Simply adapt the workload definition in the `json` file and replace the relevant image files. Then use the `workload_create` command and use the adapted files.
+
+Version-level filters are available for `ms-workloads provision`, `ms-workloads export`,
+`ms-workloads delete`, and `ms-workloads deploy`. This is useful if the input contains multiple versions
+and only a subset should be processed.
+
+```bash
+poetry run nerve-cli ms-workloads export exported_workloads --input workloads.json --version-name v1
+```
+
+### Interactive shell command restrictions
+
+When running `poetry run nerve-cli cli`, shell execution is restricted to an internal allowlist.
+This applies to both `shell <command>` and `!<command>` syntax in interactive mode.
+
+- Allowed commands: `cat`, `cd`, `echo`, `ll`, `ls`, `nano`, `notepad`, `pwd`, `vi`, `vim`
+- `ll` is treated as an alias for `ls`
+- Windows aliases: `type` maps to `cat`, `dir` maps to `ls`, and `vi`/`nano` run as `notepad`
+- Non-allowlisted commands are rejected with an explicit error message
+
+This restriction prevents command injection vectors that depend on unrestricted shell execution.
 
 ## Use the library directly
 
