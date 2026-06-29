@@ -135,7 +135,9 @@ def nodes_remote_connections(ms_nodes, nodes, args, log):  # noqa: PLR0912, PLR0
                 node_handle.add_remote_connection(remote_connection)
             else:
                 log.info(
-                    "Skipping adding remote connection %s to node %s", remote_connection["name"], node_name
+                    "Skipping adding remote connection '%s' to node '%s'",
+                    remote_connection["name"],
+                    node_name,
                 )
     if args.delete:
         tunnels_to_remove = {}
@@ -163,7 +165,7 @@ def nodes_remote_connections(ms_nodes, nodes, args, log):  # noqa: PLR0912, PLR0
                 node_handle.remove_remote_connection(remote_connection)
             else:
                 log.info(
-                    "Skipping removing remote connection %s from node %s",
+                    "Skipping removing remote connection '%s' from node '%s'",
                     remote_connection["name"],
                     node_name,
                 )
@@ -185,13 +187,13 @@ def nodes_remote_connections(ms_nodes, nodes, args, log):  # noqa: PLR0912, PLR0
             for remote_element in remotes:
                 if not perform_action:
                     log.info(
-                        "Skipping establishing remote connection %s for node %s",
+                        "Skipping establishing remote connection '%s' for node '%s'",
                         remote_element["name"],
                         node_name,
                     )
                     continue
                 log.info(
-                    "Establishing remote connection for node %s: %s", node["name"], remote_element["name"]
+                    "Establishing remote connection for node '%s': '%s'", node["name"], remote_element["name"]
                 )
                 node_handle = ms_nodes.Node(node["serialNumber"])
                 url = node_handle.get_remote_connections(remote_element["name"])
@@ -230,13 +232,13 @@ def nodes_remote_connections(ms_nodes, nodes, args, log):  # noqa: PLR0912, PLR0
             for remote_element in remotes:
                 if not perform_action:
                     log.info(
-                        "Skipping establishing remote connection %s for node %s",
+                        "Skipping establishing remote connection '%s' for node '%s'",
                         remote_element["name"],
                         node_name,
                     )
                     continue
                 log.info(
-                    "Establishing remote connection for node %s: %s", node["name"], remote_element["name"]
+                    "Establishing remote connection for node '%s': '%s'", node["name"], remote_element["name"]
                 )
                 node_handle = ms_nodes.Node(node["serialNumber"])
                 url = node_handle.get_remote_connections(remote_element["name"])
@@ -247,7 +249,7 @@ def nodes_remote_connections(ms_nodes, nodes, args, log):  # noqa: PLR0912, PLR0
     if args.prune_remote_connections:
         active_connections = ms_nodes.get_active_remote_connections()
         for entry in active_connections:
-            log.debug("Connection established by %s", entry["connectionRequest"]["requestedBy"])
+            log.debug("Connection established by '%s'", entry["connectionRequest"]["requestedBy"])
         ms_user = MSUser(ms_nodes.ms)
         user_id = ms_user.get(ms_nodes.ms.usr)["_id"]
         remote_ids = []

@@ -140,6 +140,13 @@ To inspect only DNA-related options for workload DNA actions:
 poetry run nerve-cli ms-nodes workload-dna -h
 ```
 
+To add or delete labels, provide the label source as a positional `SOURCE` argument:
+
+```bash
+poetry run nerve-cli ms-labels add pairs:env:prod,site:vienna
+poetry run nerve-cli ms-labels delete labels.json
+```
+
 The scripts also provide a workflow to create a new workload. Start by generating a template for the desired workload type:
 
 ```bash
@@ -159,6 +166,29 @@ and only a subset should be processed.
 
 ```bash
 poetry run nerve-cli ms-workloads export exported_workloads --input workloads.json --version-name v1
+```
+
+### Filter Pattern Syntax
+
+Several filter arguments (e.g., `--name`, `--serial-number`, `--version`, `--workload-name`, `--remote-connection-name`, `--filter-name`) support two matching modes:
+
+| Mode | Prefix | Example |
+|---|---|---|
+| Exact string match | *(none)* | `--name mynode` |
+| Regular expression | `regex:` or `regexp:` | `--name regex:node_[0-9]+` |
+
+Both `regex:` and `regexp:` are equivalent and trigger `re.search()` matching against the full field value.
+
+```bash
+# Exact match
+poetry run nerve-cli ms-nodes list --name mynode
+
+# Regex match (matches node_1, node_42, …)
+poetry run nerve-cli ms-nodes list --name regex:node_[0-9]+
+poetry run nerve-cli ms-nodes list --name regexp:node_[0-9]+
+
+# Regex on workload name
+poetry run nerve-cli ms-nodes list --workload-name regex:nginx.*
 ```
 
 ### Interactive shell command restrictions

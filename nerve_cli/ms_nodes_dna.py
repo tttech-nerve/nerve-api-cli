@@ -165,7 +165,7 @@ def ms_nodes_dna(ms_nodes, nodes, args, log):
                     dna_config,
                 )
             log.info(
-                "Current %s configuration of node %s:\n%s",
+                "Current %s configuration of node '%s':\n%s",
                 dna_type,
                 node["name"],
                 yaml.dump(dna_config, indent=4, default_flow_style=False),
@@ -197,7 +197,7 @@ def ms_nodes_dna(ms_nodes, nodes, args, log):
                     dna_config,
                 )
             log.info(
-                "Target %s configuration of node %s:\n%s",
+                "Target %s configuration of node '%s':\n%s",
                 dna_type,
                 node["name"],
                 yaml.dump(dna_config, indent=4, default_flow_style=False),
@@ -210,7 +210,7 @@ def ms_nodes_dna(ms_nodes, nodes, args, log):
                     dna_status = json.loads(ex_msg.response_text)[0].get("message")
                 else:
                     dna_status = ex_msg.response_text
-            log.info("%s status of node '%25s': %s", dna_type, node["name"], dna_status)
+            log.info("%s status of node %25s: %s", dna_type, node["name"], dna_status)
             status_nodes[node["name"]] = dna_status
 
         if (args.put_target or args.cancel or args.re_apply) and not perform_action:
@@ -241,13 +241,13 @@ def ms_nodes_dna(ms_nodes, nodes, args, log):
                     restart_all_wl=args.restart_all_workloads,
                     remove_images=args.remove_docker_images,
                 )
-            log.info("%s configuration deployed to node %s", dna_type, node["name"])
+            log.info("%s configuration deployed to node '%s'", dna_type, node["name"])
         if args.cancel:
             dna.cancel_target()
-            log.info("%s target deployment cancelled on node %s", dna_type, node["name"])
+            log.info("%s target deployment cancelled on node '%s'", dna_type, node["name"])
         if args.re_apply:
             dna.reapply_target()
-            log.info("%s target re-apply triggered on node %s", dna_type, node["name"])
+            log.info("%s target re-apply triggered on node '%s'", dna_type, node["name"])
 
     if args.status:
         file_write(args.work_dir, args.output, status_nodes, output_methods=["stdout", "file"])

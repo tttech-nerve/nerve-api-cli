@@ -48,7 +48,7 @@ def create_ms_workloads_path(work_dir, path, workload_name, workload_version):
     full_path = os.path.join(work_dir, rel_path)
     if not os.path.exists(full_path):
         os.makedirs(full_path)
-    return rel_path
+    return full_path
 
 
 def reorder_wl_def_files(wl_definition: dict) -> tuple[dict, bool]:
@@ -107,12 +107,15 @@ def ms_workloads_single_export(ms_workloads, args, wl_name, filtered_versions, l
             "Exporting workload '%s' with version '%s' to '%s'",
             wl_name,
             detailed_version["name"],
-            get_workload_rel_path(args.work_dir, args.export, wl_name, detailed_version["name"]),
+            os.path.join(
+                args.work_dir,
+                get_workload_rel_path(args.work_dir, args.export, wl_name, detailed_version["name"]),
+            ),
         )
 
         if wl_def_content["type"] == "vm":
             wl_def_content = reorder_wl_def_files(wl_def_content)
-        file_write(os.path.join(args.work_dir, save_path), "wl_def.json", clean_wl_definition(wl_def_content))
+        file_write(save_path, "wl_def.json", clean_wl_definition(wl_def_content))
 
         if wl_def_content["type"] == "docker-compose":
             compose_name = next(
@@ -126,7 +129,7 @@ def ms_workloads_single_export(ms_workloads, args, wl_name, filtered_versions, l
                 )
             else:
                 compose_file = wl_version.get_compose_content()
-                file_write(os.path.join(args.work_dir, save_path), compose_name, compose_file)
+                file_write(save_path, compose_name, compose_file)
 
         if args.template:
             continue
@@ -139,38 +142,38 @@ def ms_workloads_single_export(ms_workloads, args, wl_name, filtered_versions, l
                 .strip('"')
             )
 
-            destination_path = os.path.join(args.work_dir, save_path, file_name)
+            destination_path = os.path.join(save_path, file_name)
             if os.path.exists(destination_path):
-                destination_path = os.path.join(args.work_dir, save_path, file_name)
+                destination_path = os.path.join(save_path, file_name)
 
             # Save the file to the specified path in chunks to handle large files
             with open(destination_path, "wb") as dest_file:
                 for chunk in response.iter_content(chunk_size=8192):  # Stream in 8KB chunks
                     if chunk:  # Filter out keep-alive new chunks
                         dest_file.write(chunk)
-        log.debug("Downloaded and saved file: %s", file_name)
+        log.debug("Downloaded and saved file: '%s'", file_name)
         # untar the file
         files_contained = []
         if file_name.endswith((".tar.gz", ".tgz")):
-            log.debug("Extracting tar-gzipped file: %s (%s)", destination_path, file_name)
+            log.debug("Extracting tar-gzipped file: '%s' ('%s')", destination_path, file_name)
             with tarfile.open(destination_path, "r:gz") as tar:
-                tar.extractall(path=os.path.join(args.work_dir, save_path))
+                tar.extractall(path=save_path)
                 files_contained = tar.getnames()
-            log.debug("Extracted files: %s", files_contained)
+            log.debug("Extracted files: '%s'", files_contained)
         if file_name.endswith(".tar"):
             with tarfile.open(destination_path, "r:") as tar:
-                tar.extractall(path=os.path.join(args.work_dir, save_path))
+                tar.extractall(path=save_path)
                 files_contained = tar.getnames()
-            log.debug("Extracted files: %s", files_contained)
+            log.debug("Extracted files: '%s'", files_contained)
         os.remove(destination_path)
         for file in files_contained:
             if file.endswith(".gz"):
-                full_file_path = os.path.join(args.work_dir, save_path, file)
-                log.debug("Extracting gzipped file: %s (%s)", full_file_path, file)
+                full_file_path = os.path.join(save_path, file)
+                log.debug("Extracting gzipped file: '%s' ('%s')", full_file_path, file)
                 extracted_file = os.path.splitext(full_file_path)[0]
                 with gzip.open(full_file_path, "rb") as f_in, open(extracted_file, "wb") as f_out:
                     shutil.copyfileobj(f_in, f_out)
-                log.debug("Extracted gzipped file: %s", extracted_file)
+                log.debug("Extracted gzipped file: '%s'", extracted_file)
                 os.remove(full_file_path)
 
         for file_info in wl_def_content["versions"][0].get("files", []):
@@ -190,14 +193,15 @@ def ms_workloads_single_export(ms_workloads, args, wl_name, filtered_versions, l
                 name
                 and original_name
                 and name != original_name
-                and os.path.exists(os.path.join(args.work_dir, save_path, name))
+                and os.path.exists(os.path.join(save_path, name))
             ):
                 os.rename(
-                    os.path.join(args.work_dir, save_path, name),
-                    os.path.join(args.work_dir, save_path, original_name),
+                    os.path.join(save_path, name),
+                    os.path.join(save_path, original_name),
                 )
-                log.debug("Renamed file %s to %s", name, original_name)
-            if name and not original_name and os.path.exists(os.path.join(args.work_dir, save_path, name)):
+                log.debug("Renamed file '%s' to '%s'", name, original_name)
+                log.info("Saved file '%s'", os.path.join(save_path, original_name))
+            elif name and not original_name and os.path.exists(os.path.join(save_path, name)):
                 log.debug("File '%s' has no original name specified in the JSON", name)
                 if file_info["source"]:
                     original_name = file_info["source"].split("/")[-1].split(":")[0]
@@ -208,17 +212,28 @@ def ms_workloads_single_export(ms_workloads, args, wl_name, filtered_versions, l
                             file_suffix = "." + name.split(".")[-1]
                     else:
                         file_suffix = ""
-                    log.debug("Trying to rename file %s to %s based on source", name, original_name)
+                    log.debug("Trying to rename file '%s' to '%s' based on source", name, original_name)
                     if file_suffix:
                         os.rename(
-                            os.path.join(args.work_dir, save_path, name),
-                            os.path.join(args.work_dir, save_path, original_name + file_suffix),
+                            os.path.join(save_path, name),
+                            os.path.join(save_path, original_name + file_suffix),
                         )
-                        log.debug("Renamed file %s to %s", name, original_name + file_suffix)
+                        log.debug("Renamed file '%s' to '%s'", name, original_name + file_suffix)
+                        log.info("Saved file '%s'", os.path.join(save_path, original_name + file_suffix))
                     else:
                         log.debug(
                             "Could not determine file suffix for file '%s', keeping the name as is", name
                         )
+                        log.info("Saved file '%s'", os.path.join(save_path, name))
+            elif os.path.exists(os.path.join(save_path, name)):
+                log.info("Saved file '%s'", os.path.join(save_path, name))
+            else:
+                log.warning(
+                    "File '%s' not found in the extracted files for workload '%s' version '%s'",
+                    name,
+                    wl_name,
+                    detailed_version["name"],
+                )
 
 
 def ms_workloads_export(ms_workloads, workloads, args, log=None):
@@ -242,7 +257,10 @@ def ms_workloads_export(ms_workloads, workloads, args, log=None):
                     "Skipping export of workload '%s' version '%s' to '%s'",
                     wl_name,
                     version["name"],
-                    get_workload_rel_path(args.work_dir, args.export, wl_name, version["name"]),
+                    os.path.join(
+                        args.work_dir,
+                        get_workload_rel_path(args.work_dir, args.export, wl_name, version["name"]),
+                    ),
                 )
             continue
         ms_workloads_single_export(ms_workloads, args, wl_name, workload["versions"], log)

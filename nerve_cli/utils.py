@@ -273,6 +273,19 @@ def size_string_to_bytes(size_str):
     raise ValueError(f"Invalid size string: {size_str}")
 
 
+def match_filter(filter_str: str, value: str) -> bool:
+    """Match a filter string against a value.
+
+    If filter_str starts with 'regex:' or 'regexp:', the remainder is treated as a
+    regular expression and matched against value using re.search().
+    Otherwise an exact string equality check is performed.
+    """
+    if filter_str.startswith(("regex:", "regexp:")):
+        prefix_len = len("regex:") if filter_str.startswith("regex:") else len("regexp:")
+        return re.search(filter_str[prefix_len:], value) is not None
+    return filter_str == value
+
+
 def ask_for_confirmation(args, prompt):
     """Ask the user for confirmation and return True if the answer is yes."""
 
@@ -284,4 +297,4 @@ def ask_for_confirmation(args, prompt):
         return True
 
     response = input(f"{prompt} (y/n): ")
-    return response.lower() == "y"
+    return response.lower() in {"y", "yes"}

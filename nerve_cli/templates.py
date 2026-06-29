@@ -204,6 +204,7 @@ def nerve_templates(parent, arg, log=None):
         else:
             wl_template = ms_workloads.gen_workload_configuration(
                 provision_type,
+                file_paths,
                 wrkld_name="test_workload",
                 wrkld_version_name="test_version",
                 api_version=api_version,

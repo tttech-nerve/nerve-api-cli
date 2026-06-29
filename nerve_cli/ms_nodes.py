@@ -33,13 +33,14 @@ from .utils import file_read
 from .utils import file_write
 from .utils_docker_volumes import args_docker_volumes
 from .utils_docker_volumes import docker_volumes
+from .utils_nodes import add_node_path_to_nodes
 from .utils_nodes import args_ms_node_filters
 from .utils_nodes import args_ms_nodes_list
 from .utils_nodes import args_ms_nodes_remote_connection_filters
 from .utils_nodes import args_ms_nodes_workload_filters
-from .utils_nodes import filter_node
-from .utils_nodes import filter_node_info
-from .utils_nodes import filter_node_remote_connections
+from .utils_nodes import filter_nodes
+from .utils_nodes import filter_nodes_info
+from .utils_nodes import filter_nodes_remote_connections
 from .utils_nodes import normalize_nodes_input
 from .utils_nodes import show_nodes
 
@@ -163,14 +164,16 @@ def ms_nodes(parent, arg, log=None):  # noqa: PLR0911
     if action == "list":
         nodes = ms_nodes.get_nodes()
         log.info("%d Nodes found on MS, reading details and applying filters now...", len(nodes))
+        add_node_path_to_nodes(ms_nodes, nodes)  # Add node path to each node for filtering
+
         # filter in steps
-        nodes = list(filter(lambda node: filter_node(node, ms_nodes, args, log), nodes))
+        nodes = filter_nodes(nodes, ms_nodes, args, log)
         log.info("%d Nodes matched node filters and are included in the output", len(nodes))
 
-        nodes = list(filter(lambda node: filter_node_info(node, ms_nodes, args, log), nodes))
+        nodes = filter_nodes_info(nodes, ms_nodes, args, log)
         log.info("%d Nodes matched node info filters (and are included in the output", len(nodes))
 
-        nodes = list(filter(lambda node: filter_node_remote_connections(node, ms_nodes, args, log), nodes))
+        nodes = filter_nodes_remote_connections(nodes, ms_nodes, args, log)
         log.info("%d Nodes matched remote connection filters and are included in the output", len(nodes))
 
         show_nodes(nodes, log)
@@ -190,15 +193,15 @@ def ms_nodes(parent, arg, log=None):  # noqa: PLR0911
         )
         for node in nodes:
             if not perform_action:
-                log.info("Skipping reboot of node %s", node["name"])
+                log.info("Skipping reboot of node '%s'", node["name"])
                 continue
-            log.info("Trigger command to reboot node %s", node["name"])
+            log.info("Trigger command to reboot node '%s'", node["name"])
             node_handle = ms_nodes.Node(node["serialNumber"])
             try:
                 node_handle.reboot()
             except CheckStatusCodeError as ex_msg:
                 if ex_msg.status_code == requests.codes.conflict:
-                    log.warning("Node %s is currently not reachable and cannot be rebooted", node["name"])
+                    log.warning("Node '%s' is currently not reachable and cannot be rebooted", node["name"])
                     ret_val = 1
 
         return ret_val
@@ -213,7 +216,7 @@ def ms_nodes(parent, arg, log=None):  # noqa: PLR0911
     if action == "set-workload-state":
         # Apply workload filters
         args.remove_non_matching_workloads = True
-        nodes = list(filter(lambda node: filter_node_info(node, ms_nodes, args, log), nodes))
+        nodes = filter_nodes_info(nodes, ms_nodes, args, log)
         if not nodes:
             log.info(
                 "No nodes have workloads matching the specified filters. No workload state changes will be made."
@@ -230,7 +233,7 @@ def ms_nodes(parent, arg, log=None):  # noqa: PLR0911
                 workload_name = workload["name"]
                 if not perform_action:
                     log.info(
-                        "Skipping changing state of workload %s on node %s",
+                        "Skipping changing state of workload '%s' on node '%s'",
                         workload_name,
                         node["name"],
                     )
@@ -240,7 +243,7 @@ def ms_nodes(parent, arg, log=None):  # noqa: PLR0911
 
     if action == "remote-connections":
         # Apply remote-connection filters
-        nodes = list(filter(lambda node: filter_node_remote_connections(node, ms_nodes, args, log), nodes))
+        nodes = filter_nodes_remote_connections(nodes, ms_nodes, args, log)
         if not nodes:
             log.info(
                 "No nodes have remote connections matching the specified filters. No remote connection actions will be made."

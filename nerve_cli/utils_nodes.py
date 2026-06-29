@@ -22,6 +22,7 @@ import operator
 import re
 
 from .ms_nodes_remote_connections import get_existing_remotes
+from .utils import match_filter
 
 
 def args_ms_node_filters(parser):
@@ -146,6 +147,12 @@ def parse_semantic_version(version_str):
         return None
 
 
+def add_node_path_to_nodes(ms_nodes, nodes):
+    node_paths = ms_nodes.node_tree._get_tree()
+    for node in nodes:
+        node["path"] = find_path(node_paths, node["name"])
+
+
 def find_path(data, node_name, path=None):
     if path is None:
         path = []
@@ -168,24 +175,9 @@ def find_path(data, node_name, path=None):
     return None
 
 
-def _filter_name(name, args, log):
-    if args.name.startswith("regex:"):
-        pattern = args.name[len("regex:") :]
-        return re.search(pattern, name) is not None
-    return args.name == name
-
-
-def _filter_serial_number(serial_number, args, log):
-    if args.serial_number.startswith("regex:"):
-        pattern = args.serial_number[len("regex:") :]
-        return re.search(pattern, serial_number) is not None
-    return args.serial_number == serial_number
-
-
 def _filter_version(version, args, log):
-    if args.version.startswith("regex:"):
-        pattern = args.version[len("regex:") :]
-        return re.search(pattern, version) is not None
+    if args.version.startswith(("regex:", "regexp:")):
+        return match_filter(args.version, version)
     match = re.match(r"(<=|>=|<|>)(.+)", args.version)
     if match:
         op_str, ver_str = match.groups()
@@ -211,15 +203,17 @@ def _filter_labels(node_labels, args, log):
         return True
     label_filters = args.labels.split(",")
     for label_filter in label_filters:
-        if label_filter.startswith("regex:"):
-            pattern = label_filter[len("regex:") :]
-            if any(re.search(pattern, f"key={label['key']}/value={label['value']}") for label in node_labels):
+        if label_filter.startswith(("regex:", "regexp:")):
+            if any(
+                match_filter(label_filter, f"key={label['key']}/value={label['value']}")
+                for label in node_labels
+            ):
                 continue
             return False
         key_value = label_filter.split("/")
         if len(key_value) != 2:  # noqa: PLR2004
             log.warning(
-                "Invalid label filter format: %s. Expected 'key=label_key/value=label_value'. Skipping this filter.",
+                "Invalid label filter format: '%s'. Expected 'key=label_key/value=label_value'. Skipping this filter.",
                 label_filter,
             )
             continue
@@ -229,85 +223,58 @@ def _filter_labels(node_labels, args, log):
     return True
 
 
-def _filter_path(node_path, args, log):
-    if not args.node_path:
-        return True
-    if args.node_path.startswith("regex:"):
-        pattern = args.node_path[len("regex:") :]
-        return re.search(pattern, "/".join(node_path)) is not None
-    return args.node_path == "/".join(node_path)
-
-
 def _filter_workload(workload, args, log):
-    def filter_workload_name(workload_name):
-        if args.workload_name.startswith("regex:"):
-            pattern = args.workload_name[len("regex:") :]
-            return re.search(pattern, workload_name) is not None
-        return args.workload_name == workload_name
-
-    def filter_workload_version_name(workload_version_name):
-        if args.workload_version_name.startswith("regex:"):
-            pattern = args.workload_version_name[len("regex:") :]
-            return re.search(pattern, workload_version_name) is not None
-        return args.workload_version_name == workload_version_name
-
-    def filter_workload_status(workload_status):
-        return args.workload_status == workload_status
-
-    def filter_workload_type(workload_type):
-        return args.workload_type == workload_type
-
-    if args.workload_name and not filter_workload_name(workload["name"]):
+    if args.workload_name and not match_filter(args.workload_name, workload["name"]):
         return False
-    if args.workload_version_name and not filter_workload_version_name(workload["version_name"]):
+    if args.workload_version_name and not match_filter(args.workload_version_name, workload["version_name"]):
         return False
-    if args.workload_status and not filter_workload_status(workload["state"]):
+    if args.workload_status and args.workload_status != workload["state"]:
         return False
-    if args.workload_type and not filter_workload_type(workload["type"]):  # noqa: SIM103
+    if args.workload_type and args.workload_type != workload["type"]:
         return False
     return True
 
 
-def _filter_remote_connection(remote_connection, args, log):
-    if args.remote_connection_type and remote_connection["type"] != args.remote_connection_type:
-        return False
-    if args.remote_connection_name:
-        if args.remote_connection_name.startswith("regex:"):
-            pattern = args.remote_connection_name[len("regex:") :]
-            return re.search(pattern, remote_connection["name"]) is not None
-        return args.remote_connection_name == remote_connection["name"]
-    return True
-
-
-def filter_node(node, ms_nodes, args, log):
+def filter_nodes(nodes, ms_nodes, args, log):
     """Apply filters for node level.
 
     Filters:
         --name
         --serial-number
         --online
-        --model
         --version
     """
-    if args.name and not _filter_name(node["name"], args, log):
-        return False
-    if args.serial_number and not _filter_serial_number(node["serialNumber"], args, log):
-        return False
-    if args.online and node["connectionStatus"] != "online":
-        return False
-    if args.version and not _filter_version(node["currentFWVersion"], args, log):
-        return False
 
-    if args.node_path and not _filter_path(node.get("path", []), args, log):
-        # Only get node path if filter is defined
-        node_paths = ms_nodes.node_tree._get_tree()
-        node["path"] = find_path(node_paths, node["name"])
-        return False
+    def filter_node(node):
+        if args.name and not match_filter(args.name, node["name"]):
+            return False
+        if args.serial_number and not match_filter(args.serial_number, node["serialNumber"]):
+            return False
+        if args.online and node["connectionStatus"] != "online":
+            return False
+        if args.version and not _filter_version(node["currentFWVersion"], args, log):
+            return False
 
-    return True
+        if args.node_path and not match_filter(args.node_path, "/".join(node["path"])):
+            return False
+
+        return True
+
+    for filer_name, arg_value in {
+        "--name": args.name or "",
+        "--serial-number": args.serial_number or "",
+        "--node-path": args.node_path or "",
+        "--version": args.version or "",
+    }.items():
+        if arg_value.startswith(("regex:", "regexp:")):
+            log.info(
+                "Filtering nodes by '%s' with regex pattern: '%s'", filer_name, arg_value.split(":", 1)[1]
+            )
+
+    return list(filter(filter_node, nodes))
 
 
-def filter_node_info(node, ms_nodes, args, log):
+def filter_nodes_info(nodes, ms_nodes, args, log):
     """Apply filters for node-info level.
 
     Filters:
@@ -320,86 +287,119 @@ def filter_node_info(node, ms_nodes, args, log):
         --remove-non-matching-workloads (affects output but not filtering itself)
     """
     # Extend node info with details
-    required_keys = ["model", "labels", "workloads"]
-    if not all(key in node for key in required_keys):
-        node_info = ms_nodes.Node(node["serialNumber"])
-        node_details = node_info.get_details()
 
-        ## Model
-        node["model"] = node_details.get("model", "unknown")
-        ## Labels
-        node["labels"] = []
-        for label in node_details["labels"]:
-            node["labels"].append({"key": label["key"], "value": label["value"]})
-        # workloads
-        node["workloads"] = []
-        for wl in node_info.get_workloads() if node["connectionStatus"] == "online" else []:
-            wl_service_control = next(
-                wl_service for wl_service in wl["service_list"] if wl_service["name"] == "VMControlService"
+    def filter_node_info(node):
+        required_keys = ["model", "labels", "workloads"]
+        if not all(key in node for key in required_keys):
+            node_info = ms_nodes.Node(node["serialNumber"])
+            node_details = node_info.get_details()
+
+            ## Model
+            node["model"] = node_details.get("model", "unknown")
+            ## Labels
+            node["labels"] = []
+            for label in node_details["labels"]:
+                node["labels"].append({"key": label["key"], "value": label["value"]})
+            # workloads
+            node["workloads"] = []
+            for wl in node_info.get_workloads() if node["connectionStatus"] == "online" else []:
+                wl_service_control = next(
+                    wl_service
+                    for wl_service in wl["service_list"]
+                    if wl_service["name"] == "VMControlService"
+                )
+                wl_service_state = next(
+                    entry for entry in wl_service_control["property_list"] if entry["name"] == "State"
+                )
+                wl_state = wl_service_state["options"][wl_service_state["value"]]
+
+                wl_service_conf = next(
+                    wl_service
+                    for wl_service in wl["service_list"]
+                    if wl_service["name"] == "WiseConfigurationService"
+                )
+                wl_conf_value = next(
+                    entry for entry in wl_service_conf["property_list"] if entry["name"] == "Value"
+                )
+                wl_version_name = json.loads(wl_conf_value["value"])["workloadVersionName"]
+
+                node_wl = {
+                    "name": wl["device_name"],
+                    "type": wl["type"],
+                    "_id": wl["workloadId"],
+                    "version_id": wl["versionId"],
+                    "version_name": wl_version_name,
+                    "state": wl_state,
+                    "device_id": wl["id"],
+                }
+
+                node["workloads"].append(node_wl)
+
+        if getattr(args, "model", None) and node["model"] != args.model:
+            return False
+        if getattr(args, "labels", None) and not _filter_labels(node.get("labels", []), args, log):
+            return False
+
+        if args.remove_non_matching_workloads:
+            node["workloads"] = [wl for wl in node.get("workloads", []) if _filter_workload(wl, args, log)]
+
+        if (  # noqa: SIM103
+            args.workload_name or args.workload_version_name or args.workload_status or args.workload_type
+        ) and not any(_filter_workload(wl, args, log) for wl in node.get("workloads", [])):
+            return False
+
+        return True
+
+    for filer_name, arg_value in {
+        "--workload-name": args.workload_name or "",
+        "--workload-version-name": args.workload_version_name or "",
+    }.items():
+        if arg_value.startswith(("regex:", "regexp:")):
+            log.info(
+                "Filtering nodes by '%s' with regex pattern: '%s'", filer_name, arg_value.split(":", 1)[1]
             )
-            wl_service_state = next(
-                entry for entry in wl_service_control["property_list"] if entry["name"] == "State"
-            )
-            wl_state = wl_service_state["options"][wl_service_state["value"]]
-
-            wl_service_conf = next(
-                wl_service
-                for wl_service in wl["service_list"]
-                if wl_service["name"] == "WiseConfigurationService"
-            )
-            wl_conf_value = next(
-                entry for entry in wl_service_conf["property_list"] if entry["name"] == "Value"
-            )
-            wl_version_name = json.loads(wl_conf_value["value"])["workloadVersionName"]
-
-            node_wl = {
-                "name": wl["device_name"],
-                "type": wl["type"],
-                "_id": wl["workloadId"],
-                "version_id": wl["versionId"],
-                "version_name": wl_version_name,
-                "state": wl_state,
-                "device_id": wl["id"],
-            }
-
-            node["workloads"].append(node_wl)
-
-    if getattr(args, "model", None) and node["model"] != args.model:
-        return False
-    if getattr(args, "labels", None) and not _filter_labels(node.get("labels", []), args, log):
-        return False
-
-    if args.remove_non_matching_workloads:
-        node["workloads"] = [wl for wl in node.get("workloads", []) if _filter_workload(wl, args, log)]
-
-    if (  # noqa: SIM103
-        args.workload_name or args.workload_version_name or args.workload_status or args.workload_type
-    ) and not any(_filter_workload(wl, args, log) for wl in node.get("workloads", [])):
-        return False
-
-    return True
+    return list(filter(filter_node_info, nodes))
 
 
-def filter_node_remote_connections(node, ms_nodes, args, log):
+def filter_nodes_remote_connections(nodes, ms_nodes, args, log):
     """Apply filters for node remote connections.
 
     Filters:
         --remote-connection-type
         --remote-connection-name
     """
+
     # remote connections
-    if "remote_connections" not in node:
-        node["remote_connections"] = get_existing_remotes(ms_nodes, [node]).get(node["name"], [])
+    def filter_node_remote_connections(node):
+        if "remote_connections" not in node:
+            node["remote_connections"] = get_existing_remotes(ms_nodes, [node]).get(node["name"], [])
 
-    node["remote_connections"] = [
-        rc for rc in node["remote_connections"] if _filter_remote_connection(rc, args, log)
-    ]
+        def match_remote_connection(remote_connection, args, log):
+            if args.remote_connection_type and remote_connection["type"] != args.remote_connection_type:
+                return False
+            if args.remote_connection_name:
+                return match_filter(args.remote_connection_name, remote_connection["name"])
+            return True
 
-    # if filter for remote connection is defined, remove nodes without any match
-    if (args.remote_connection_type or args.remote_connection_name) and not node["remote_connections"]:  # noqa: SIM103
-        return False
+        node["remote_connections"] = [
+            rc for rc in node["remote_connections"] if match_remote_connection(rc, args, log)
+        ]
 
-    return True
+        # if filter for remote connection is defined, remove nodes without any match
+        if (args.remote_connection_type or args.remote_connection_name) and not node["remote_connections"]:  # noqa: SIM103
+            return False
+
+        return True
+
+    for filer_name, arg_value in {
+        "--remote-connection-name": args.remote_connection_name or "",
+    }.items():
+        if arg_value.startswith(("regex:", "regexp:")):
+            log.info(
+                "Filtering nodes by '%s' with regex pattern: '%s'", filer_name, arg_value.split(":", 1)[1]
+            )
+
+    return list(filter(filter_node_remote_connections, nodes))
 
 
 def normalize_nodes_input(nodes, ms_nodes):
@@ -454,10 +454,11 @@ def show_nodes(present_nodes, log):
                 f"Name: {wl['name']:20}, Version: {wl['version_name']:20}, Status: {wl['state']}"
             )
         log.info(
-            "Node '%s' (%s): \n    status   : %s\n    Workloads: - %s\n    Remote Connections: - %s",
+            "Node '%s' (%s): \n    status: %s\n    path: '%s'\n    Workloads: - %s\n    Remote Connections: - %s",
             node["name"],
             node["serialNumber"],
             node["connectionStatus"],
+            "/".join(node.get("path", [])),
             "\n               - ".join(workload_list),
             "\n                        - ".join([
                 f"{rc['type']}: '{rc['name']}' ({rc['hostname']}:{rc['port']}->{rc.get('localPort', '')}{rc.get('connection', '')})"

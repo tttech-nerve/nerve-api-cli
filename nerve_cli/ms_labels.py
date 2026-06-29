@@ -45,13 +45,14 @@ def args_ms_labels(parser):
     )
 
     for action_name, help_text in {
-        "add": "Add labels from INPUT to Management System.",
-        "delete": "Delete labels from INPUT from Management System.",
+        "add": "Add labels from SOURCE to Management System.",
+        "delete": "Delete labels from SOURCE from Management System.",
     }.items():
         action_subparser = action_parser.add_parser(action_name, help=help_text)
         action_subparser.set_defaults(ms_labels_action=action_name)
         action_subparser.add_argument(
-            "--input",
+            "input",
+            nargs="?",
             metavar="SOURCE",
             default="labels.json",
             help="Input source for labels: FILE path (e.g., 'labels.json'), stdin:json, stdin:yaml, or pairs:key1:value1,key2:value2",
@@ -82,6 +83,15 @@ def ms_labels(parent, arg, log=None):
     if action == "list":
         labels = ms_label.fetch_labels()
         labels = [{"key": label.get("key"), "value": label.get("value")} for label in labels.get("data", [])]
+        if labels:
+            max_label_len = max(len(label["key"]) for label in labels)
+            label_table = f"key{' ' * (max_label_len - 3)} | value\n{'-' * max_label_len}-|-{'-' * 5}\n"
+            label_table += "\n".join([
+                f"{label['key']:<{max_label_len}} | {label['value']}" for label in labels
+            ])
+            log.info("Fetched %d labels from '%s':\n%s", len(labels), args.ms_url, label_table)
+        else:
+            log.info("No labels found in '%s'", args.ms_url)
         file_write(args.work_dir, args.output, labels, output_methods=["stdout", "pairs", "file"])
         return 0
 
@@ -92,24 +102,24 @@ def ms_labels(parent, arg, log=None):
 
     if action == "add":
         perform_action = ask_for_confirmation(
-            args, f"Are you sure you want to add {len(labels)} labels to {args.ms_url}?"
+            args, f"Are you sure you want to add {len(labels)} labels to '{args.ms_url}'?"
         )
 
         for label in labels:
             if perform_action:
                 ms_label.create_label(label.get("key"), label.get("value"))
             else:
-                log.info("Skipping adding label %s", f"{label.get('key')}:{label.get('value')}")
+                log.info("Skipping adding label '%s'", f"{label.get('key')}:{label.get('value')}")
         return 0
     if action == "delete":
         perform_action = ask_for_confirmation(
-            args, f"Are you sure you want to delete {len(labels)} labels from {args.ms_url}?"
+            args, f"Are you sure you want to delete {len(labels)} labels from '{args.ms_url}'?"
         )
         for label in labels:
             if perform_action:
                 ms_label.delete(label.get("key"), label.get("value"))
             else:
-                log.info("Skipping deleting label %s", f"{label.get('key')}:{label.get('value')}")
+                log.info("Skipping deleting label '%s'", f"{label.get('key')}:{label.get('value')}")
         return 0
 
     log.error("No valid action specified")

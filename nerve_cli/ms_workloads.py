@@ -183,7 +183,6 @@ def args_ms_workloads(parser):
         help="Provision docker/docker-compose as legacy workloads (older format)",
         action="store_true",
     )
-    args_ms_workloads_list_versions(provision_parser)
 
     delete_parser = action_parser.add_parser(
         "delete",
@@ -237,13 +236,26 @@ def ms_workloads_list(ms_workloads, args, log):
     output = []
 
     # get full list of all workloads
-    filter_name = args.name if "regex:" not in args.name else ""
+    filter_name = args.name if not args.name.startswith(("regex:", "regexp:")) else ""
     wl_list = ms_workloads.get_workloads_dict(
         read_versions=True, compact_dict=False, filter_name=filter_name, filter_type=args.type
+    )
+    log.info(
+        "%d workloads including %d versions fetched from the '%s'",
+        len(wl_list),
+        sum(len(wl.get("versions", [])) for wl in wl_list),
+        args.ms_url,
     )
 
     # apply workload level filters
     workloads_filtered = []
+    for filer_name, arg_value in {
+        "--name": args.name or "",
+    }.items():
+        if arg_value.startswith(("regex:", "regexp:")):
+            log.info(
+                "Filtering workloads by '%s' with regex pattern: '%s'", filer_name, arg_value.split(":", 1)[1]
+            )
     for workload in wl_list:
         wl_name = workload["name"]
         if not check_filter_arg(args.name, wl_name):
@@ -254,7 +266,18 @@ def ms_workloads_list(ms_workloads, args, log):
 
         workloads_filtered.append(workload)
 
+    log.info(
+        "%d workloads including %d versions matched workload filters",
+        len(workloads_filtered),
+        sum(len(wl.get("versions", [])) for wl in workloads_filtered),
+    )
+
     output = normalize_workloads_input(workloads_filtered, args, ms_workloads, log)
+    log.info(
+        "%d workloads including %d versions matched workload version filters",
+        len(output),
+        sum(len(wl.get("versions", [])) for wl in output),
+    )
     human_readable_output(output, log)
 
     # Check if all workload details can be read successfully
@@ -353,7 +376,7 @@ def ms_workloads_deploy(ms_workloads, workloads, ms_nodes, args, log=None):
     for workload in workloads:
         if len(workload.get("versions", [])) > 1:
             log.warning(
-                "Workload %s has no specific version defined, last version will be selected",
+                "Workload '%s' has no specific version defined, last version will be selected",
                 workload["name"],
             )
             version = workload["versions"][-1]
@@ -362,7 +385,7 @@ def ms_workloads_deploy(ms_workloads, workloads, ms_nodes, args, log=None):
             )
         elif len(workload.get("versions", [])) == 0:
             log.warning(
-                "Workload %s has no specific version defined, latest version will be selected",
+                "Workload '%s' has no specific version defined, latest version will be selected",
                 workload["name"],
             )
             wl_version = ms_workloads.WorkloadVersion(workload["name"])

@@ -189,21 +189,21 @@ def push_workload_to_docker_registry(
                 if dest_ms_url not in docker.auth.load_config().get("auths", {}) and ms_usr and ms_psw:
                     log.info(" - docker login '%s'", dest_ms_url)
                     client.login(username=ms_usr, password=ms_psw, registry=f"https://{dest_ms_url}")
-                log.info("Processing Docker image file: %s", file_path)
+                log.info("Processing Docker image file: '%s'", file_path)
                 with open(os.path.join(work_dir, file_path), "rb") as file:
                     log.info(
-                        " - LOADED_IMAGE=$(docker image load -i %s | awk -F': ' '{print $2}')", file_path
+                        " - LOADED_IMAGE=$(docker image load -i '%s' | awk -F': ' '{print $2}')", file_path
                     )
                     images = client.images.load(file.read())
                 loaded_image = images[0]
                 if loaded_image.tag(repo_mod, tag=tag):
-                    log.info(" - docker tag %s %s:%s", loaded_image.tags[0], repo_mod, tag)
+                    log.info(" - docker tag '%s' '%s:%s'", loaded_image.tags[0], repo_mod, tag)
                 prev_status = ""
-                log.info(" - docker push %s:%s", repo_mod, tag)
+                log.info(" - docker push '%s:%s'", repo_mod, tag)
                 for line in client.images.push(repo_mod, tag=tag, stream=True, decode=True):
                     if prev_status != line.get("status"):
                         log.debug(
-                            "%s:%s - %s %s",
+                            "'%s:%s' - %s %s",
                             repo_mod,
                             tag,
                             line.get("status", ""),
@@ -211,10 +211,10 @@ def push_workload_to_docker_registry(
                         )
                         prev_status = line.get("status")
                 try:
-                    log.info(" - docker image rm %s:%s", repo_mod, tag)
+                    log.info(" - docker image rm '%s:%s'", repo_mod, tag)
                     client.images.remove(image=f"{repo_mod}:{tag}", force=True)
                 except (docker.errors.APIError, docker.errors.DockerException) as e:
-                    log.warning("Failed to remove image %s:%s - %s", repo_mod, tag, e)
+                    log.warning("Failed to remove image '%s:%s' - %s", repo_mod, tag, e)
                 break
         else:
             log.info(
@@ -227,10 +227,10 @@ def push_workload_to_docker_registry(
         )
         log.info("You can also try to push the image manually using following commands in the terminal:\n")
         for file_path in file_paths:
-            log.info(" - LOADED_IMAGE=$(docker image load -i %s | awk -F': ' '{print $2}')", file_path)
-            log.info(" - docker tag $LOADED_IMAGE %s:%s", repository, tag)
-            log.info(" - docker push %s:%s", repository, tag)
-            log.info(" - docker image rm %s:%s", repository, tag)
+            log.info(" - LOADED_IMAGE=$(docker image load -i '%s' | awk -F': ' '{print $2}')", file_path)
+            log.info(" - docker tag $LOADED_IMAGE '%s:%s'", repository, tag)
+            log.info(" - docker push '%s:%s'", repository, tag)
+            log.info(" - docker image rm '%s:%s'", repository, tag)
 
         raise RuntimeError(f"Error occurred while processing Docker images: {e}")
     finally:
@@ -291,7 +291,7 @@ def get_version_file_paths(work_dir, path, wl_name, version, log):
         else version.get("files", [])
     )
     search_files = search_iterator if version else []
-    file_name = lambda f: f.get("originalName") or f.get("source", {}).split("/")[-1] or f.get("name")
+    file_name = lambda f: f.get("originalName") or f.get("source", "").split("/")[-1] or f.get("name")
     search_file_names = [file_name(s_file) for s_file in search_files]
     # some file-names can be docker-tags like ngingx:latest, those need to be checked in the manifest of the docker tar files
     search_file_docker_tags = [s_file for s_file in search_file_names if ":" in s_file]

@@ -20,13 +20,13 @@
 
 """Functions to support cli commands."""
 
-import re
 from datetime import UTC
 from datetime import datetime
 
 from nerve_lib import CheckStatusCodeError
 
 from .utils import format_size_string
+from .utils import match_filter
 from .utils import size_string_to_bytes
 
 
@@ -65,10 +65,8 @@ def check_filter_arg(cmd_line_filter, data_value):
     if cmd_line_filter:
         if isinstance(cmd_line_filter, (bool, int)):
             ret_val = cmd_line_filter == data_value
-        elif cmd_line_filter.startswith("regex:"):
-            if isinstance(data_value, str):
-                regex = re.compile(cmd_line_filter[6:])
-                ret_val = bool(regex.search(data_value))
+        elif isinstance(data_value, str):
+            ret_val = match_filter(cmd_line_filter, data_value)
         else:
             ret_val = cmd_line_filter == data_value
 
@@ -234,6 +232,16 @@ def normalize_workloads_input(workloads, args, ms_workloads, log):
     fetched_workloads = []
     if isinstance(workloads, dict):
         workloads = [workloads]
+
+    for filer_name, arg_value in {
+        "--version-name": args.version_name or "",
+        "--version-release-name": args.version_release_name or "",
+    }.items():
+        if arg_value.startswith(("regex:", "regexp:")):
+            log.info(
+                "Filtering workloads by '%s' with regex pattern: '%s'", filer_name, arg_value.split(":", 1)[1]
+            )
+
     for workload in workloads:
         required_keys = {"name", "type", "_id", "versions"}
         if required_keys.issubset(workload):

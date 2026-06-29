@@ -104,6 +104,8 @@ def _format_cli_error(ex_msg):
         emsg = "Failed to authorize (invalid credentials). Please check your credentials"
     elif isinstance(ex_msg, CheckStatusCodeError):
         emsg = f"API call failed: {ex_msg}"
+    elif isinstance(ex_msg, KeyboardInterrupt):
+        emsg = "Operation interrupted by user"
     else:
         emsg += str(ex_msg)
         print_trace = True
@@ -116,12 +118,12 @@ def handle_do_errors(func):
     def wrapper(self, *args, **kwargs):
         try:
             self.last_exit_code = func(self, *args, **kwargs)
-        except Exception as ex_msg:  # noqa: BLE001
+        except (Exception, KeyboardInterrupt) as ex_msg:  # noqa: BLE001
             emsg, print_trace = _format_cli_error(ex_msg)
             self._log.error(emsg)
             if print_trace or self.args.log_level == "TRACE":
                 self._log.exception(ex_msg)
-            self.last_exit_code = 2
+            self.last_exit_code = 130 if isinstance(ex_msg, KeyboardInterrupt) else 2
         return False  # to prevent cmd from exiting on exceptions
 
     return wrapper
@@ -226,7 +228,7 @@ class NerveCLI(cmd.Cmd):
         if not ms_user or not ms_password:
             # check if the section 'ms_url' exists
             if use_ms_url in config.sections():
-                self._log.debug("Using credentials from credentials.ini for %s", use_ms_url)
+                self._log.debug("Using credentials from credentials.ini for '%s'", use_ms_url)
                 if not ms_user:
                     ms_user = config[use_ms_url]["username"]
                 if not ms_password:
@@ -237,7 +239,7 @@ class NerveCLI(cmd.Cmd):
                     " variables MS_USR and MS_PSW or in the credentials.ini file."
                 )
             else:
-                self._log.debug("Using credentials from environment variables for %s", use_ms_url)
+                self._log.debug("Using credentials from environment variables for '%s'", use_ms_url)
                 ms_user = os.getenv("MS_USR")
                 ms_password = os.getenv("MS_PSW")
 
@@ -301,7 +303,7 @@ class NerveCLI(cmd.Cmd):
         ]
         for handler in handlers:
             handler.setLevel(log_level if log_level != "TRACE" else logging.DEBUG)
-        self._log.debug("Log level set to %s", log_level)
+        self._log.debug("Log level set to '%s'", log_level)
 
     def do_exit(self, _arg):
         "Exit the CLI: exit."
@@ -351,7 +353,7 @@ class NerveCLI(cmd.Cmd):
         return self._run_shell_command(normalized_command, command_args)
 
     def default(self, arg):
-        self._log.info("Unknown command: %s", arg)
+        self._log.info("Unknown command: '%s'", arg)
         self.do_help("")
 
     @handle_do_errors

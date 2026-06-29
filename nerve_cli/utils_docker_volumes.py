@@ -33,6 +33,7 @@ from .utils import ask_for_confirmation
 from .utils import file_read
 from .utils import file_write
 from .utils import format_size_string
+from .utils import match_filter
 from .utils import size_string_to_bytes
 
 
@@ -93,7 +94,7 @@ def filter_unnamed_volumes(volumes, log):
     for volume in volumes:
         name = volume.get("name")
         if len(name) == 64 and all(c in "abcdefghijklmnopqrstuvwxyz0123456789" for c in name):  # noqa: PLR2004
-            log.debug("- %s: skipped (likely a unnamed volume created by a workload)", name)
+            log.debug("- '%s': skipped (likely a unnamed volume created by a workload)", name)
             continue
         filtered_volumes.append(volume)
     return filtered_volumes
@@ -102,6 +103,16 @@ def filter_unnamed_volumes(volumes, log):
 def get_filtered_volumes(serial_numbers, volumes_handle, args, log):
 
     filtered_volumes_all = {}
+    for filer_name, arg_value in {
+        "--filter-name": args.filter_name or "",
+    }.items():
+        if arg_value.startswith(("regex:", "regexp:")):
+            log.info(
+                "Filtering docker-volumes by '%s' with regex pattern: '%s'",
+                filer_name,
+                arg_value.split(":", 1)[1],
+            )
+
     for serial_number in serial_numbers:
         add_args = {"dut_serial": serial_number} if isinstance(volumes_handle, DockerVolumes) else {}
         volumes = volumes_handle.get_volumes(**add_args).get("volumes", [])
@@ -114,10 +125,9 @@ def get_filtered_volumes(serial_numbers, volumes_handle, args, log):
 
         if args.filter_name:
             filter_str = args.filter_name
-            if filter_str.startswith("regex:"):
-                regex_pattern = filter_str[len("regex:") :]
+            if filter_str.startswith(("regex:", "regexp:")):
                 filtered_volumes = [
-                    v for v in filtered_volumes if re.search(regex_pattern, v.get("name", ""))
+                    v for v in filtered_volumes if match_filter(filter_str, v.get("name", ""))
                 ]
             else:
                 filtered_volumes = [v for v in filtered_volumes if filter_str in v.get("name", "")]
@@ -179,7 +189,7 @@ def sort_volumes_per_workload(volumes_info, log: logging.Logger | None = None):
                     else:
                         backup_exports = ""
                     log.info(
-                        "  - %s (%s)   %s",
+                        "  - '%s' (%s)   %s",
                         vol["name"],
                         format_size_string(vol["size"], fraction_digits=0),
                         backup_exports,
