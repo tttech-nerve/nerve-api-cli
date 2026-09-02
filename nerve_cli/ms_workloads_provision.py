@@ -124,8 +124,8 @@ def get_repotags_from_docker_tar(work_dir, file_path, log):
     repo_tags = ""
 
     open_method = "r:gz" if file_path.endswith(".tar.gz") else "r"
-    while True:  # noqa: PLR1702
-        try:  # noqa: PLW0717
+    while True:  # ruff:ignore[too-many-nested-blocks]
+        try:  # ruff:ignore[too-many-statements-in-try-clause]
             with tarfile.open(os.path.join(work_dir, file_path), open_method) as tar_file:
                 for member in tar_file.getmembers():
                     if member.name == "manifest.json":
@@ -170,7 +170,7 @@ def push_workload_to_docker_registry(
     work_dir, file_paths, dest_ms_url, repository, tag="latest", ms_usr: str = "", ms_psw: str = "", log=None
 ):
     client = None
-    try:  # noqa: PLW0717
+    try:  # ruff:ignore[too-many-statements-in-try-clause]
         file_tags = {}
         for file_path in file_paths:
             if file_path.endswith((".tar", ".tar.gz")):
@@ -296,7 +296,7 @@ def get_version_file_paths(work_dir, path, wl_name, version, log):
     # some file-names can be docker-tags like ngingx:latest, those need to be checked in the manifest of the docker tar files
     search_file_docker_tags = [s_file for s_file in search_file_names if ":" in s_file]
     found_file_pathes = []
-    for sub_path in resolve_workload_file_paths(work_dir, path):  # noqa: PLR1702
+    for sub_path in resolve_workload_file_paths(work_dir, path):  # ruff:ignore[too-many-nested-blocks]
         # if sub_path is a file, check if it is the searched file and add to list, if it is a folder, search in all subfolders
         if os.path.isfile(sub_path) and os.path.basename(sub_path) in search_file_names:
             log.debug(
@@ -359,7 +359,7 @@ def get_version_file_paths(work_dir, path, wl_name, version, log):
     return found_file_pathes
 
 
-def ms_workloads_provision(ms_workloads, workloads, args, log=None):  # noqa: PLR0912, PLR0914, PLR0915
+def ms_workloads_provision(ms_workloads, workloads, args, log=None):  # ruff:ignore[too-many-branches, too-many-locals, too-many-statements]
     if args.registry and args.legacy:
         raise ValueError(
             "Cannot set both 'registry' and 'legacy' flags. Please choose one of the registry types for provisioning the workload."
@@ -380,7 +380,7 @@ def ms_workloads_provision(ms_workloads, workloads, args, log=None):  # noqa: PL
     if isinstance(workloads, dict):
         workloads = [workloads]
 
-    for search_workload in workloads:  # noqa: PLR1702
+    for search_workload in workloads:  # ruff:ignore[too-many-nested-blocks]
         workload, wl_def_file_path = get_wl_def_from_path(args.work_dir, args.provision, search_workload, log)
         wl_name = workload["name"]
         wl_type = workload["type"]

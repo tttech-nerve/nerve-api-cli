@@ -60,7 +60,7 @@ def reorder_wl_def_files(wl_definition: dict) -> tuple[dict, bool]:
         return wl_definition
 
     files = versions[0].get("files")
-    if not isinstance(files, list) or len(files) < 2:  # noqa: PLR2004
+    if not isinstance(files, list) or len(files) < 2:  # ruff:ignore[magic-value-comparison]
         return wl_definition
 
     def is_xml_file(file_entry: dict) -> bool:
@@ -88,7 +88,7 @@ def ms_workloads_single_export(ms_workloads, args, wl_name, filtered_versions, l
         return
 
     # retrieve all workload version details and overwrite the filtered versions
-    for i, version in enumerate(filtered_versions):  # noqa: PLR1702
+    for i, version in enumerate(filtered_versions):  # ruff:ignore[too-many-nested-blocks]
         if not version.get("releaseName"):
             version.update({"releaseName": ""})
 

@@ -115,7 +115,7 @@ def file_write(work_dir, file_name, content, output_methods: list[str] | None = 
         _log.info("File '%s' written", file_path)
 
 
-def file_read(work_dir, file_name, input_methods: list[str] | None = None):  # noqa: PLR0911
+def file_read(work_dir, file_name, input_methods: list[str] | None = None):  # ruff:ignore[too-many-return-statements]
     """Read input file.
 
     input methods:
@@ -254,7 +254,7 @@ def format_size_string(size_bytes, fraction_digits=2):
         return f"{size_bytes / (1024 * 1024 * 1024):.{fraction_digits}f}GB"
     if size_bytes > 1024 * 1024:
         return f"{size_bytes / (1024 * 1024):.{fraction_digits}f}MB"
-    if size_bytes > 1024:  # noqa: PLR2004
+    if size_bytes > 1024:  # ruff:ignore[magic-value-comparison]
         return f"{size_bytes / 1024:.{fraction_digits}f}KB"
     return f"{size_bytes}B"
 

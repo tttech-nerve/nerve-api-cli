@@ -40,6 +40,8 @@ from nerve_lib import setup_logging
 
 from .local_node import args_local_node
 from .local_node import local_node
+from .ms_access_token import args_ms_access_token
+from .ms_access_token import ms_access_token
 from .ms_labels import args_ms_labels
 from .ms_labels import ms_labels
 from .ms_nodes import args_ms_nodes
@@ -76,7 +78,7 @@ def _format_cli_error(ex_msg):
     elif isinstance(ex_msg, (ValueError, AttributeError)):
         emsg = str(ex_msg)
         for err_text in [
-            "No username/password provided for MS login",
+            "No username/password or access token provided for MS login",
             "No MS URL provided.",
             "Invalid format for log_level: ",
             "Invalid format for --filter-size",
@@ -93,6 +95,8 @@ def _format_cli_error(ex_msg):
             "No shell command provided.",
             "Shell command '",
             "Command 'cat' requires at least one path argument.",
+            "does not exist on node",
+            "not valid, use one of ",
         ]:
             if err_text in str(ex_msg):
                 break
@@ -118,7 +122,7 @@ def handle_do_errors(func):
     def wrapper(self, *args, **kwargs):
         try:
             self.last_exit_code = func(self, *args, **kwargs)
-        except (Exception, KeyboardInterrupt) as ex_msg:  # noqa: BLE001
+        except (Exception, KeyboardInterrupt) as ex_msg:  # ruff:ignore[blind-except]
             emsg, print_trace = _format_cli_error(ex_msg)
             self._log.error(emsg)
             if print_trace or self.args.log_level == "TRACE":
@@ -201,16 +205,19 @@ class NerveCLI(cmd.Cmd):
 
         os.makedirs(args.work_dir, exist_ok=True)
 
-        ms_url, ms_user, ms_password = self._get_ms_user_password(args.ms_url, args.ms_user, args.ms_password)
+        ms_url, ms_user, ms_password, ms_token = self._get_ms_access(
+            args.ms_url, args.ms_user, args.ms_password, args.ms_token
+        )
         self.args.ms_user = ms_user
         self.args.ms_password = ms_password
+        self.args.ms_token = ms_token
 
-        self.set_ms_url(ms_url, self.args.ms_user, self.args.ms_password)
+        self.set_ms_url(ms_url, self.args.ms_user, self.args.ms_password, self.args.ms_token)
 
         if ms_url:
             self._log.info("NerveCLI started for '%s'", ms_url)
 
-    def _get_ms_user_password(self, ms_url, ms_user, ms_password):
+    def _get_ms_access(self, ms_url, ms_user, ms_password, ms_token):
         config = configparser.ConfigParser()
         config.read("credentials.ini")
         if not ms_url:
@@ -219,47 +226,59 @@ class NerveCLI(cmd.Cmd):
                 ms_url_from_credentials = config.sections()[0]
             use_ms_url = os.getenv("MS_URL") or ms_url_from_credentials
             if not use_ms_url:
-                return "", "", ""
+                return "", "", "", ""
         elif ms_url.startswith("http"):
             use_ms_url = ms_url.split("://")[1]
         else:
             use_ms_url = ms_url
 
-        if not ms_user or not ms_password:
+        if (not ms_user or not ms_password) and not ms_token:
             # check if the section 'ms_url' exists
             if use_ms_url in config.sections():
                 self._log.debug("Using credentials from credentials.ini for '%s'", use_ms_url)
-                if not ms_user:
-                    ms_user = config[use_ms_url]["username"]
-                if not ms_password:
-                    ms_password = config[use_ms_url]["password"]
-            elif (not os.getenv("MS_USR") and not ms_user) or (not os.getenv("MS_PSW") and not ms_password):
+                if not ms_token:
+                    if "access_token" in config[use_ms_url]:
+                        ms_token = config[use_ms_url]["access_token"]
+                    else:
+                        if not ms_user:
+                            ms_user = config[use_ms_url]["username"]
+                        if not ms_password:
+                            ms_password = config[use_ms_url]["password"]
+            elif (
+                ((not os.getenv("MS_USR") and not ms_user) or (not os.getenv("MS_PSW") and not ms_password))
+                and not os.getenv("MS_ACCESS_TOKEN")
+                and not ms_token
+            ):
                 self._log.warning(
                     "No credentials provided for MS. Please provide credentials in the environment"
-                    " variables MS_USR and MS_PSW or in the credentials.ini file."
+                    " variables MS_USR and MS_PSW or MS_ACCESS_TOKEN or in the credentials.ini file."
                 )
             else:
                 self._log.debug("Using credentials from environment variables for '%s'", use_ms_url)
-                ms_user = os.getenv("MS_USR")
-                ms_password = os.getenv("MS_PSW")
+                ms_user = os.getenv("MS_USR", "")
+                ms_password = os.getenv("MS_PSW", "")
+                ms_token = os.getenv("MS_ACCESS_TOKEN", "")
 
-        return use_ms_url, ms_user, ms_password
+        return use_ms_url, ms_user, ms_password, ms_token
 
     def get_names(self):
         return [name for name in super().get_names() if name not in self._hidden_command_names]
 
-    def set_ms_url(self, ms_url, ms_user, ms_password):
+    def set_ms_url(self, ms_url, ms_user, ms_password, ms_token):
         if ms_url:
-            self.ms = MSHandle(ms_url, ms_user, ms_password)
+            self.ms = MSHandle(ms_url, ms_user, ms_password, ms_token)
         else:
             # usage of MS handle will lead to an error if no MS URL is provided
             # Error is only raised when MS actually needs be be used, function not requiring this call (e.g. to create templates)
             # will work without MS URL
             class FakeCallMS:
-                def __init__(self, ms_user="", ms_password="", *args, **kwargs):  # pragma: allowlist secret
+                def __init__(
+                    self, ms_user="", ms_password="", ms_token="", *args, **kwargs
+                ):  # pragma: allowlist secret
                     self._log = logging.getLogger("CLI")
                     self.usr = ms_user
                     self.psw = ms_password
+                    self.access_token = ms_token
                     self.ms_url = ""
 
                 @classmethod
@@ -280,7 +299,7 @@ class NerveCLI(cmd.Cmd):
                         " If a credentials.ini file exists with only one section, the MS will be set to this."
                     )
 
-            self.ms = FakeCallMS(ms_user, ms_password)
+            self.ms = FakeCallMS(ms_user, ms_password, ms_token)
 
         self.ms_workloads = MSWorkloads(self.ms)
 
@@ -417,17 +436,31 @@ class NerveCLI(cmd.Cmd):
                     "(2) credentials.ini, (3) env-var MS_PSW"
                 ),
             )
+            parser.add_argument(
+                "--ms-token",
+                default="",
+                metavar="TOKEN",
+                help=(
+                    "Management System login access token. Priority: (1) command-line arg, "
+                    "(2) credentials.ini, (3) env-var MS_ACCESS_TOKEN. "
+                    "The token has priority over username/password authentication and can be created "
+                    "with 'ms-access-token create'."
+                ),
+            )
 
         args = args_interactive(arg, args_set_new_management_system, "Set new Nerve management system URL")
         if not args:
             return 2
 
-        ms_url, ms_user, ms_password = self._get_ms_user_password(args.url, args.ms_user, args.ms_password)
+        ms_url, ms_user, ms_password, ms_token = self._get_ms_access(
+            args.url, args.ms_user, args.ms_password, args.ms_token
+        )
         self.args.ms_url = ms_url
         self.args.ms_user = ms_user
         self.args.ms_password = ms_password
+        self.args.ms_token = ms_token
 
-        self.set_ms_url(ms_url, self.args.ms_user, self.args.ms_password)
+        self.set_ms_url(ms_url, self.args.ms_user, self.args.ms_password, self.args.ms_token)
 
         if ms_url:
             self._log.info("NerveCLI switched to '%s'", ms_url)
@@ -439,6 +472,13 @@ class NerveCLI(cmd.Cmd):
 
         Additional options are listed with -h/--help."""
         return local_node(self, arg, self._log)
+
+    @handle_do_errors
+    def do_ms_access_token(self, arg):
+        """Manage access tokens on the management system.
+
+        Additional options are listed with -h/--help."""
+        return ms_access_token(self, arg, self._log)
 
 
 def main():
@@ -459,20 +499,30 @@ def main():
             raise ValueError(
                 "MS URL is required to store credentials. Please provide the MS URL with --ms-url."
             )
-        if not args.ms_user:
-            raise ValueError(
-                "MS username is required to store credentials. Please provide the username with --ms-user or set it in the environment variable MS_USR."
-            )
-        if not args.ms_password:
-            raise ValueError(
-                "MS password is required to store credentials. Please provide the password with --ms-password or set it in the environment variable MS_PSW."
-            )
+        if not args.ms_token:
+            if not args.ms_user:
+                raise ValueError(
+                    "MS username is required to store credentials. Please provide the username with --ms-user or set it in the environment variable MS_USR."
+                )
+            if not args.ms_password:
+                raise ValueError(
+                    "MS password is required to store credentials. Please provide the password with --ms-password or set it in the environment variable MS_PSW."
+                )
+            if not args.ms_user and not args.ms_password:
+                raise ValueError(
+                    "MS user/password or token is required to store credentials. Please provide the"
+                    " username and password with --ms-user and --ms-password or token with --ms-token or"
+                    " set them in the environment variables MS_USR, MS_PSW, and MS_ACCESS_TOKEN."
+                )
+
         if args.ms_url not in config.sections():
             config[args.ms_url] = {}
         if args.ms_user:
             config[args.ms_url]["username"] = args.ms_user
         if args.ms_password:
             config[args.ms_url]["password"] = args.ms_password
+        if args.ms_token:
+            config[args.ms_url]["access_token"] = args.ms_token
         with open("credentials.ini", "w", encoding="utf-8") as configfile:
             config.write(configfile)
         cli_log.info(f"Credentials for {args.ms_url} stored in credentials.ini")
@@ -495,6 +545,8 @@ def main():
         cli.do_ms_labels(args)
     if "local-node" == args.func:
         cli.do_local_node(args)
+    if "ms-access-token" == args.func:
+        cli.do_ms_access_token(args)
 
     if "cli" == args.func:
         try:
@@ -508,7 +560,9 @@ def main():
 def build_parser():
     # Add initial argurments
     parser = argparse.ArgumentParser(
-        description="Nerve API CLI for managing devices, workloads, labels, and remote connections.",
+        description=(
+            "Nerve API CLI for managing devices, workloads, labels, remote connections, and access tokens."
+        ),
         prog="nerve-cli",
     )
 
@@ -548,6 +602,16 @@ def build_parser():
         help=(
             "Management System login password. Priority: (1) command-line arg, "
             "(2) credentials.ini, (3) env-var MS_PSW"
+        ),
+    )
+    ms_settings.add_argument(
+        "--ms-token",
+        metavar="TOKEN",
+        help=(
+            "Management System login access token. Priority: (1) command-line arg, "
+            "(2) credentials.ini, (3) env-var MS_ACCESS_TOKEN. "
+            "The token has priority over username/password authentication and can be created "
+            "with 'ms-access-token create'."
         ),
     )
     parser.add_argument(
@@ -598,8 +662,8 @@ def build_parser():
     subparser = main_subparser.add_parser(
         "ms-nodes",
         help=(
-            "Manage nodes on the management system (list, reboot, workload state, DNA, remote connections), "
-            "with filtering support."
+            "Manage nodes on the management system (list, reboot, workload state, DNA, remote connections, "
+            "labels), with filtering support."
         ),
     )
     args_ms_nodes(subparser)
@@ -617,4 +681,13 @@ def build_parser():
     )
     args_local_node(subparser)
     subparser.set_defaults(func="local-node")
+
+    # ms_access_token
+    subparser = main_subparser.add_parser(
+        "ms-access-token",
+        help="Manage access tokens (list, create, delete, unlock-brute-force, permissions) on the management system.",
+    )
+    args_ms_access_token(subparser)
+    subparser.set_defaults(func="ms-access-token")
+
     return parser

@@ -23,8 +23,13 @@ import requests
 from nerve_lib import CheckStatusCodeError
 from nerve_lib import DockerVolumes
 
+from .ms_nodes_compose_restrictions import args_ms_nodes_compose_restrictions
+from .ms_nodes_compose_restrictions import ms_nodes_compose_restrictions
 from .ms_nodes_dna import args_ms_nodes_dna
+from .ms_nodes_dna import args_ms_nodes_workload_dna
 from .ms_nodes_dna import ms_nodes_dna
+from .ms_nodes_labels import args_ms_nodes_labels
+from .ms_nodes_labels import ms_nodes_labels
 from .ms_nodes_remote_connections import args_nodes_remote_connections
 from .ms_nodes_remote_connections import nodes_remote_connections
 from .utils import args_interactive
@@ -33,7 +38,6 @@ from .utils import file_read
 from .utils import file_write
 from .utils_docker_volumes import args_docker_volumes
 from .utils_docker_volumes import docker_volumes
-from .utils_nodes import add_node_path_to_nodes
 from .utils_nodes import args_ms_node_filters
 from .utils_nodes import args_ms_nodes_list
 from .utils_nodes import args_ms_nodes_remote_connection_filters
@@ -55,9 +59,8 @@ def _add_ms_nodes_input_argument(parser):
 
 
 def _add_ms_nodes_output_argument(parser, default="nodes.json"):
-    help_text = f"Output destination: FILE path (e.g., 'output.json'), stdout:json, stdout:yaml, or stdout:key (e.g., stdout:name), default is '{default}'"
-    if default != "nodes.json":
-        help_text += f"Output destination: FILE path (e.g., 'output.json'), stdout:json or stdout:yaml, default is '{default}'"
+    help_text = f"Output destination: FILE path (e.g., 'output.json'), stdout:json, stdout:yaml, default is '{default}'"
+
     parser.add_argument(
         "--output",
         metavar="DESTINATION",
@@ -111,7 +114,7 @@ def args_ms_nodes(parser):
     )
     _add_ms_nodes_input_argument(node_dna_parser)
     _add_ms_nodes_output_argument(node_dna_parser, default="node_dna_status.json")
-    args_ms_nodes_dna(node_dna_parser)
+    args_ms_nodes_dna(node_dna_parser, dna_type="node-dna")
     node_dna_parser.set_defaults(node_dna=True, workload_dna=False)
 
     workload_dna_parser = _ms_nodes_action_parser(
@@ -121,7 +124,8 @@ def args_ms_nodes(parser):
     )
     _add_ms_nodes_input_argument(workload_dna_parser)
     _add_ms_nodes_output_argument(workload_dna_parser, default="workload_dna_status.json")
-    args_ms_nodes_dna(workload_dna_parser)
+    args_ms_nodes_dna(workload_dna_parser, dna_type="workload-dna")
+    args_ms_nodes_workload_dna(workload_dna_parser)
     workload_dna_parser.set_defaults(node_dna=False, workload_dna=True)
 
     remote_connections_parser = _ms_nodes_action_parser(
@@ -143,12 +147,28 @@ def args_ms_nodes(parser):
     _add_ms_nodes_input_argument(docker_volumes_parser)
     args_docker_volumes(docker_volumes_parser)
 
+    labels_parser = _ms_nodes_action_parser(
+        action_parser,
+        "labels",
+        "Manage labels on nodes from INPUT using label options.",
+    )
+    _add_ms_nodes_input_argument(labels_parser)
+    args_ms_nodes_labels(labels_parser)
+
+    compose_restrictions_parser = _ms_nodes_action_parser(
+        action_parser,
+        "compose-restrictions",
+        "Manage compose-restrictions.json of nodes from INPUT using compose-restrictions actions.",
+    )
+    _add_ms_nodes_input_argument(compose_restrictions_parser)
+    args_ms_nodes_compose_restrictions(compose_restrictions_parser)
+
 
 def _get_ms_nodes_action(args):
     return getattr(args, "ms_nodes_action", "")
 
 
-def ms_nodes(parent, arg, log=None):  # noqa: PLR0911
+def ms_nodes(parent, arg, log=None):  # ruff: ignore[too-many-return-statements]
     log = log.getChild(__name__.split(".")[-1]) if log else logging.getLogger(__name__)
 
     args = args_interactive(arg, args_ms_nodes, "List nodes and create a node list or add to the list")
@@ -164,7 +184,6 @@ def ms_nodes(parent, arg, log=None):  # noqa: PLR0911
     if action == "list":
         nodes = ms_nodes.get_nodes()
         log.info("%d Nodes found on MS, reading details and applying filters now...", len(nodes))
-        add_node_path_to_nodes(ms_nodes, nodes)  # Add node path to each node for filtering
 
         # filter in steps
         nodes = filter_nodes(nodes, ms_nodes, args, log)
@@ -250,5 +269,11 @@ def ms_nodes(parent, arg, log=None):  # noqa: PLR0911
             )
             return 1
         return nodes_remote_connections(ms_nodes, nodes, args, log)
+
+    if action == "labels":
+        return ms_nodes_labels(ms_nodes, nodes, args, log)
+
+    if action == "compose-restrictions":
+        return ms_nodes_compose_restrictions(ms_nodes, nodes, args, log)
 
     return 1

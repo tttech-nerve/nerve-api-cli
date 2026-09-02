@@ -10,7 +10,7 @@ requires-python = ">=3.11,<4.0"
 
 
 dependencies = [
-    "nerve-lib @ git+https://github.com/tttech-nerve/nerve-api-python.git@v1.4.0",
+    "nerve-lib @ git+https://github.com/tttech-nerve/nerve-api-python.git#prepare-release-1.5",
     "docker (>=7.1.0,<8.0.0)",
 ]
 
@@ -19,7 +19,7 @@ dependencies = [
 pytest = "^9.0.2"
 hypothesis = "^6.127.3"
 pytest-cov = "^7.0.0"
-ruff = "^0.15.2"
+ruff = "^0.16.0"
 
 [project.scripts]
 nerve-cli = "nerve_cli.cli:main"
@@ -60,8 +60,8 @@ extend-select = [
     "I",
     "G",
     "PL",
-    "ISC002",
-    "ISC003",
+    "multi-line-implicit-string-concatenation",
+    "explicit-string-concatenation",
     "ICN",
     "N",
     "CPY",
@@ -74,9 +74,9 @@ extend-select = [
 ignore = []
 
 unfixable = [
-    "PLW1510", # `subprocess.run` without explicit `check` argument - not deemed safe
-    "PLW1514", # `open` in text mode without explicit `encoding` argument - no autofix for encoding issues
-    "RET503",  # Missing explicit `return` at the end of function
+    "subprocess-run-without-check", # `subprocess.run` without explicit `check` argument - not deemed safe
+    "unspecified-encoding", # `open` in text mode without explicit `encoding` argument - no autofix for encoding issues
+    "implicit-return",  # Missing explicit `return` at the end of function
 ]
 
 pydocstyle.convention = "numpy"

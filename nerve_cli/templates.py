@@ -101,6 +101,13 @@ def nerve_templates(parent, arg, log=None):
     args.work_dir = parent.args.work_dir
 
     if _get_template_action(args) == "workload":
+        if args.workload == "registry":
+            log.warning(
+                "The 'template workload registry' command is deprecated. "
+                "Use 'template workload docker --external-docker-registry' or "
+                "'template workload docker --internal-docker-registry' instead."
+            )
+
         networks = ["bridge", "isolated1"]
         compose_dict = {}
         remote_connections = [
@@ -115,7 +122,7 @@ def nerve_templates(parent, arg, log=None):
         ]
         if args.workload == "docker":
             file_paths = ["nginx.tar.gz"]
-        if args.workload == "registry":
+        if args.workload == "registry" or (args.workload == "docker" and args.external_docker_registry):
             file_paths = ["arvindr226/alpine-ssh"]
         if args.workload == "vm":
             file_paths = ["slitaz_small.qcow2", "slitaz_small.qcow2.xml"]

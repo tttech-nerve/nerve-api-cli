@@ -50,11 +50,6 @@ def args_ms_node_filters(parser):
         metavar="PATTERN",
         help="Filter by node labels (format: 'key=label_key/value=label_value'). Supports regex (prefix with 'regex:'; e.g., 'regex:key=env')",
     )
-    filter_args.add_argument(
-        "--node-path",
-        metavar="PATTERN",
-        help="Filter by node path (folder structure: '/folder1/folder2'). Supports regex (prefix with 'regex:')",
-    )
 
     filter_args.add_argument(
         "--version",
@@ -147,34 +142,6 @@ def parse_semantic_version(version_str):
         return None
 
 
-def add_node_path_to_nodes(ms_nodes, nodes):
-    node_paths = ms_nodes.node_tree._get_tree()
-    for node in nodes:
-        node["path"] = find_path(node_paths, node["name"])
-
-
-def find_path(data, node_name, path=None):
-    if path is None:
-        path = []
-
-    if isinstance(data, dict):
-        for key, value in data.items():
-            new_path = [*path, key]
-            if key == "name" and value == node_name:
-                return path
-
-            result = find_path(value, node_name, new_path)
-            if result:
-                return result
-    elif isinstance(data, list):
-        for index, item in enumerate(data):
-            result = find_path(item, node_name, path)
-            if result:
-                return result
-
-    return None
-
-
 def _filter_version(version, args, log):
     if args.version.startswith(("regex:", "regexp:")):
         return match_filter(args.version, version)
@@ -211,7 +178,7 @@ def _filter_labels(node_labels, args, log):
                 continue
             return False
         key_value = label_filter.split("/")
-        if len(key_value) != 2:  # noqa: PLR2004
+        if len(key_value) != 2:  # ruff: ignore[magic-value-comparison]
             log.warning(
                 "Invalid label filter format: '%s'. Expected 'key=label_key/value=label_value'. Skipping this filter.",
                 label_filter,
@@ -230,7 +197,7 @@ def _filter_workload(workload, args, log):
         return False
     if args.workload_status and args.workload_status != workload["state"]:
         return False
-    if args.workload_type and args.workload_type != workload["type"]:
+    if args.workload_type and args.workload_type != workload["type"]:  # ruff: ignore[needless-bool]
         return False
     return True
 
@@ -252,18 +219,13 @@ def filter_nodes(nodes, ms_nodes, args, log):
             return False
         if args.online and node["connectionStatus"] != "online":
             return False
-        if args.version and not _filter_version(node["currentFWVersion"], args, log):
+        if args.version and not _filter_version(node["currentFWVersion"], args, log):  # ruff: ignore[needless-bool]
             return False
-
-        if args.node_path and not match_filter(args.node_path, "/".join(node["path"])):
-            return False
-
         return True
 
     for filer_name, arg_value in {
         "--name": args.name or "",
         "--serial-number": args.serial_number or "",
-        "--node-path": args.node_path or "",
         "--version": args.version or "",
     }.items():
         if arg_value.startswith(("regex:", "regexp:")):
@@ -343,7 +305,7 @@ def filter_nodes_info(nodes, ms_nodes, args, log):
         if args.remove_non_matching_workloads:
             node["workloads"] = [wl for wl in node.get("workloads", []) if _filter_workload(wl, args, log)]
 
-        if (  # noqa: SIM103
+        if (  # ruff: ignore[needless-bool]
             args.workload_name or args.workload_version_name or args.workload_status or args.workload_type
         ) and not any(_filter_workload(wl, args, log) for wl in node.get("workloads", [])):
             return False
@@ -386,7 +348,7 @@ def filter_nodes_remote_connections(nodes, ms_nodes, args, log):
         ]
 
         # if filter for remote connection is defined, remove nodes without any match
-        if (args.remote_connection_type or args.remote_connection_name) and not node["remote_connections"]:  # noqa: SIM103
+        if (args.remote_connection_type or args.remote_connection_name) and not node["remote_connections"]:  # ruff:ignore[needless-bool]
             return False
 
         return True
@@ -454,11 +416,10 @@ def show_nodes(present_nodes, log):
                 f"Name: {wl['name']:20}, Version: {wl['version_name']:20}, Status: {wl['state']}"
             )
         log.info(
-            "Node '%s' (%s): \n    status: %s\n    path: '%s'\n    Workloads: - %s\n    Remote Connections: - %s",
+            "Node '%s' (%s): \n    status: %s\n    Workloads: - %s\n    Remote Connections: - %s",
             node["name"],
             node["serialNumber"],
             node["connectionStatus"],
-            "/".join(node.get("path", [])),
             "\n               - ".join(workload_list),
             "\n                        - ".join([
                 f"{rc['type']}: '{rc['name']}' ({rc['hostname']}:{rc['port']}->{rc.get('localPort', '')}{rc.get('connection', '')})"

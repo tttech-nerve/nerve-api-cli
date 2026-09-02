@@ -34,7 +34,13 @@ from .utils import file_read
 from .utils import file_write
 
 
-def args_ms_nodes_dna(parser):
+def args_ms_nodes_dna(parser, dna_type):
+    example_files = (
+        "'/tmp/dna-file.yaml', 'target_node-dna.yaml'"
+        if dna_type == "node-dna"
+        else "'/tmp/dna-file.zip', 'target_workload-dna.zip'"
+    )
+    default_ext = "yaml" if dna_type == "node-dna" else "zip"
     dna_command_args_group = parser.add_argument_group(
         "Mutually exclusive arguments for node-dna and workload-dna actions"
     )
@@ -44,14 +50,14 @@ def args_ms_nodes_dna(parser):
         metavar="DNA_FILE",
         help=(
             "Deploy DNA configuration from FILE to nodes (absolute FILE path supported; "
-            "e.g., '/tmp/config.yaml', 'dna_config.json')"
+            f"e.g., {example_files})"
         ),
     )
     dna_command_args.add_argument(
         "--get-current",
         metavar="PATH",
         help=(
-            "Download current DNA configuration to PATH/NODE_SERIAL/current_<dna_type>.json "
+            f"Download current DNA configuration to PATH/NODE_SERIAL/current_{dna_type}.{default_ext} "
             "(absolute PATH supported)"
         ),
     )
@@ -59,12 +65,14 @@ def args_ms_nodes_dna(parser):
         "--get-target",
         metavar="PATH",
         help=(
-            "Download target DNA configuration to PATH/NODE_SERIAL/target_<dna_type>.json "
+            f"Download target DNA configuration to PATH/NODE_SERIAL/target_{dna_type}.{default_ext} "
             "(absolute PATH supported)"
         ),
     )
     dna_command_args.add_argument(
-        "--status", action="store_true", help="Display DNA deployment status for all nodes"
+        "--status",
+        action="store_true",
+        help="Display DNA deployment status for all nodes and stores it to OUTPUT",
     )
     dna_command_args.add_argument(
         "--cancel",
@@ -77,6 +85,8 @@ def args_ms_nodes_dna(parser):
         help="Re-apply target DNA configuration to all nodes",
     )
 
+
+def args_ms_nodes_workload_dna(parser):
     optional_dna_args = parser.add_argument_group("Optional arguments for workload-dna actions")
     optional_dna_args.add_argument(
         "--strip-hash",
@@ -131,14 +141,14 @@ def ms_nodes_dna(ms_nodes, nodes, args, log):
             args, f"Are you sure you want to {action_str} on '{', '.join(node['name'] for node in nodes)}'?"
         )
     status_nodes = {}
-    for node in nodes:  # noqa: PLR1702
+    for node in nodes:  # ruff:ignore[too-many-nested-blocks]
         if args.node_dna:
             dna = ServiceOSDNA(ms_nodes.ms, node["serialNumber"])
         else:
             dna = MSDNA(ms_nodes.ms, node["serialNumber"])
         if args.get_current:
             dna_config = dna.get_current()
-            if args.strip_hash and args.workload_dna:
+            if args.workload_dna and args.strip_hash:
                 strip_hash_from_dna_config(dna_config)
             if args.workload_dna:
                 os.makedirs(
@@ -172,7 +182,7 @@ def ms_nodes_dna(ms_nodes, nodes, args, log):
             )
         if args.get_target:
             dna_config = dna.get_target()
-            if args.strip_hash and args.workload_dna:
+            if args.workload_dna and args.strip_hash:
                 strip_hash_from_dna_config(dna_config)
             if args.workload_dna:
                 os.makedirs(os.path.join(args.work_dir, args.get_target, node["serialNumber"]), exist_ok=True)

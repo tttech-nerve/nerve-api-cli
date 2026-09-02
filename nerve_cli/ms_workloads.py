@@ -58,7 +58,6 @@ def args_ms_workloads_list_versions(parser):
         "Filter arguments to only include specific workload versions in the list results"
     )
     filter_version_args.add_argument(
-        "-v",
         "--version-name",
         metavar="PATTERN",
         help="Filter by version name. Supports regex with prefix 'regex:' (e.g., 'regex:v[0-9]+', 'v1.0')",
