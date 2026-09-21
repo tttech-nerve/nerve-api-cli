@@ -16,6 +16,9 @@
   - Access tokens can be used instead of username/password via the `--ms-token` argument, the `MS_ACCESS_TOKEN`
     environment variable, or the `access_token` key in `credentials.ini`, giving more granular control over the
     permissions available to automation and CI use-cases.
+- Dropped support for `--node-path' argument in `ms-nodes` related commands. 
+- Refined argument options for node-dna and workload-dna commands to improve clarity and usability.
+- Removed argument option '-v' for 'ms-workloads list' command to avoid confusion with log level settings.
 - Refactored nerve-cli structure to a more modular design, improving maintainability and scalability.
   - Using `-` separators for all subcommands and arguments instead of `_` to align with common CLI conventions.
   - Main sections for one-shot commands: `template`, `ms-workloads`, `ms-nodes`, `ms-labels`, `local-node`. Each section has its own subcommands and arguments, allowing for better organization and easier navigation.

@@ -89,9 +89,9 @@ def ms_labels(parent, arg, log=None):
             label_table += "\n".join([
                 f"{label['key']:<{max_label_len}} | {label['value']}" for label in labels
             ])
-            log.info("Fetched %d labels from '%s':\n%s", len(labels), args.ms_url, label_table)
+            log.info("Fetched %d labels from '%s':\n%s", len(labels), ms_label.ms.ms_url, label_table)
         else:
-            log.info("No labels found in '%s'", args.ms_url)
+            log.info("No labels found in '%s'", ms_label.ms.ms_url)
         file_write(args.work_dir, args.output, labels, output_methods=["stdout", "pairs", "file"])
         return 0
 
@@ -102,7 +102,7 @@ def ms_labels(parent, arg, log=None):
 
     if action == "add":
         perform_action = ask_for_confirmation(
-            args, f"Are you sure you want to add {len(labels)} labels to '{args.ms_url}'?"
+            args, f"Are you sure you want to add {len(labels)} labels to '{ms_label.ms.ms_url}'?"
         )
 
         for label in labels:
@@ -113,7 +113,7 @@ def ms_labels(parent, arg, log=None):
         return 0
     if action == "delete":
         perform_action = ask_for_confirmation(
-            args, f"Are you sure you want to delete {len(labels)} labels from '{args.ms_url}'?"
+            args, f"Are you sure you want to delete {len(labels)} labels from '{ms_label.ms.ms_url}'?"
         )
         for label in labels:
             if perform_action:

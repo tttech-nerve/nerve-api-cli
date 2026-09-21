@@ -166,74 +166,63 @@ def ms_workloads_single_export(ms_workloads, args, wl_name, filtered_versions, l
                 files_contained = tar.getnames()
             log.debug("Extracted files: '%s'", files_contained)
         os.remove(destination_path)
-        for file in files_contained:
-            if file.endswith(".gz"):
-                full_file_path = os.path.join(save_path, file)
-                log.debug("Extracting gzipped file: '%s' ('%s')", full_file_path, file)
+        for name in files_contained:
+            file_name = name
+            file_entry = next(
+                (entry for entry in wl_def_content["versions"][0].get("files", []) if entry["name"] == name),
+                None,
+            )
+            if not file_entry:
+                log.warning(
+                    "File '%s' not found in the extracted files for workload '%s' version '%s'",
+                    file_name,
+                    wl_name,
+                    detailed_version["name"],
+                )
+                continue
+
+            full_file_path = os.path.join(save_path, file_name)
+            if file_name.endswith(".gz") and file_entry.get("type") != ".gz":
+                log.debug("Extracting gzipped file: '%s'", full_file_path)
                 extracted_file = os.path.splitext(full_file_path)[0]
                 with gzip.open(full_file_path, "rb") as f_in, open(extracted_file, "wb") as f_out:
                     shutil.copyfileobj(f_in, f_out)
                 log.debug("Extracted gzipped file: '%s'", extracted_file)
                 os.remove(full_file_path)
+                full_file_path = extracted_file
+                file_name = file_name.rsplit(".gz", 1)[0]
 
-        for file_info in wl_def_content["versions"][0].get("files", []):
-            name = (
-                file_info["name"].rsplit(".gz", 1)[0]
-                if file_info["name"].endswith(".gz")
-                else file_info["name"]
-            )
-            original_name = file_info["originalName"]
+            original_name = file_entry.get("originalName", "")
             # for docker registry workloads
             if original_name.startswith("registry/"):
-                original_name = os.path.basename(original_name).split(":", -1)[0] + file_info.get(
+                original_name = os.path.basename(original_name).split(":", -1)[0] + file_entry.get(
                     "type", ".tar"
                 )
-            # move file with name to original name
-            if (
-                name
-                and original_name
-                and name != original_name
-                and os.path.exists(os.path.join(save_path, name))
-            ):
-                os.rename(
-                    os.path.join(save_path, name),
-                    os.path.join(save_path, original_name),
-                )
-                log.debug("Renamed file '%s' to '%s'", name, original_name)
-                log.info("Saved file '%s'", os.path.join(save_path, original_name))
-            elif name and not original_name and os.path.exists(os.path.join(save_path, name)):
-                log.debug("File '%s' has no original name specified in the JSON", name)
-                if file_info["source"]:
-                    original_name = file_info["source"].split("/")[-1].split(":")[0]
-                    if "." in name:
-                        if name.endswith(".gz"):
-                            file_suffix = "." + name.split(".")[-2] + "." + name.split(".")[-1]
+            elif file_name and not original_name:
+                log.debug("File '%s' has no original name specified in the JSON", file_name)
+                if file_entry["source"]:
+                    original_name = file_entry["source"].split("/")[-1].split(":")[0]
+                    if "." in file_entry["name"]:
+                        if file_entry["name"].endswith(".gz"):
+                            file_suffix = (
+                                "."
+                                + file_entry["name"].split(".")[-2]
+                                + "."
+                                + file_entry["name"].split(".")[-1]
+                            )
                         else:
-                            file_suffix = "." + name.split(".")[-1]
+                            file_suffix = "." + file_entry["name"].split(".")[-1]
                     else:
                         file_suffix = ""
-                    log.debug("Trying to rename file '%s' to '%s' based on source", name, original_name)
-                    if file_suffix:
-                        os.rename(
-                            os.path.join(save_path, name),
-                            os.path.join(save_path, original_name + file_suffix),
-                        )
-                        log.debug("Renamed file '%s' to '%s'", name, original_name + file_suffix)
-                        log.info("Saved file '%s'", os.path.join(save_path, original_name + file_suffix))
-                    else:
-                        log.debug(
-                            "Could not determine file suffix for file '%s', keeping the name as is", name
-                        )
-                        log.info("Saved file '%s'", os.path.join(save_path, name))
-            elif os.path.exists(os.path.join(save_path, name)):
-                log.info("Saved file '%s'", os.path.join(save_path, name))
-            else:
-                log.warning(
-                    "File '%s' not found in the extracted files for workload '%s' version '%s'",
-                    name,
-                    wl_name,
-                    detailed_version["name"],
+                    original_name += file_suffix
+            if original_name and file_name != original_name:
+                os.rename(
+                    os.path.join(save_path, file_name),
+                    os.path.join(save_path, original_name),
                 )
+                log.debug("Renamed file '%s' to '%s'", file_name, original_name)
+                file_name = original_name
+            log.info("Saved file '%s'", os.path.join(save_path, file_name))
 
 
 def ms_workloads_export(ms_workloads, workloads, args, log=None):

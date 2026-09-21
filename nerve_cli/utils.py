@@ -131,7 +131,7 @@ def file_read(work_dir, file_name, input_methods: list[str] | None = None):  # r
         print_source_info = False
     else:
         print_source_info = True
-    if file_name in ("stdin:json", "stdin") and "stdin" in input_methods:
+    if file_name in {"stdin:json", "stdin"} and "stdin" in input_methods:
         if print_source_info:
             _log.info("Reading content from stdin as JSON")
         return json.load(sys.stdin)

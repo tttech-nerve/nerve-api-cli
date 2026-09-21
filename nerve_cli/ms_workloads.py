@@ -243,7 +243,7 @@ def ms_workloads_list(ms_workloads, args, log):
         "%d workloads including %d versions fetched from the '%s'",
         len(wl_list),
         sum(len(wl.get("versions", [])) for wl in wl_list),
-        args.ms_url,
+        ms_workloads.ms.ms_url,
     )
 
     # apply workload level filters
