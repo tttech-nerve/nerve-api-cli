@@ -108,6 +108,11 @@ def args_ms_nodes_workload_dna(parser):
         action="store_true",
         help="Remove unused Docker images before DNA deployment",
     )
+    optional_dna_args.add_argument(
+        "--sign-file",
+        action="store_true",
+        help="Indicates whether the file should be signed by MS before it is applied to the node.",
+    )
 
 
 def ms_nodes_dna(ms_nodes, nodes, args, log):
@@ -250,6 +255,7 @@ def ms_nodes_dna(ms_nodes, nodes, args, log):
                     continue_after_restart=args.continue_after_restart,
                     restart_all_wl=args.restart_all_workloads,
                     remove_images=args.remove_docker_images,
+                    sign_file=args.sign_file,
                 )
             log.info("%s configuration deployed to node '%s'", dna_type, node["name"])
         if args.cancel:

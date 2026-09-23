@@ -68,6 +68,17 @@ def args_docker_volumes(parser):
     required_group = parser.add_argument_group("Mutually exclusive arguments for docker volumes")
     action_args = required_group.add_mutually_exclusive_group(required=False)
     action_args.add_argument(
+        "--list",
+        nargs="?",
+        const=True,
+        default=False,
+        metavar="PATH",
+        help=(
+            "List Docker volumes on nodes for information purposes. Optionally provide PATH to also write "
+            "the result via 'stdout', 'stdout:json', 'stdout:yaml', or a FILE path (e.g., './volumes_info.json')"
+        ),
+    )
+    action_args.add_argument(
         "--backup",
         action="store_true",
         help="Trigger Docker volume backup creation on nodes (Management System connection only)",
@@ -238,6 +249,21 @@ def docker_volumes(serial_numbers, args, volumes_handle, log):  # ruff:ignore[to
 
     # Print the filtered volumes per node and workload
     used_by_group = sort_volumes_per_workload(filtered_volumes, log=log)
+
+    if args.list:
+        for serial_number, volumes in filtered_volumes.items():
+            log.info("Docker volumes on node '%s':", serial_number)
+            for volume in volumes:
+                log.info(
+                    "  - %s (%s)",
+                    volume.get("name"),
+                    format_size_string(int(volume.get("size")), fraction_digits=0),
+                )
+
+        log.info("")  # Add an empty line for better readability between nodes
+
+        if isinstance(args.list, str):
+            file_write(args.work_dir, args.list, filtered_volumes, output_methods=["stdout", "file"])
 
     if args.backup:
         perform_action = ask_for_confirmation(
