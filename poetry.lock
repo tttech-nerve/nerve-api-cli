@@ -905,7 +905,7 @@ files = [
 
 [[package]]
 name = "nerve-lib"
-version = "1.5.0"
+version = "1.5.1"
 description = "Nerve API library"
 optional = false
 python-versions = ">=3.11,<4.0"
@@ -923,8 +923,8 @@ scp = ">=0.16.0,<0.17.0"
 [package.source]
 type = "git"
 url = "https://github.com/tttech-nerve/nerve-api-python.git"
-reference = "v1.5.0"
-resolved_reference = "f700b6ed1bb729eb63ea5a7d75ad0b7fcde61328"
+reference = "v1.5.1"
+resolved_reference = "30d8841945a0521953a2b504b2e80e545b4372bc"
 
 [[package]]
 name = "packaging"
@@ -1328,4 +1328,4 @@ zstd = ["backports-zstd (>=1.0.0) ; python_version < \"3.14\""]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.11,<4.0"
-content-hash = "180a943941ed38cc5f2cbb6916c72e648484e2cadaaf73e8073581eb32474a85"
+content-hash = "29a2bf122355ae055649e8c369a4460860de850d37e34689a9f997824f4ad0dd"
