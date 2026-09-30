@@ -21,6 +21,8 @@ import json
 import operator
 import re
 
+from nerve_lib import CheckStatusCodeError
+
 from .ms_nodes_remote_connections import get_existing_remotes
 from .utils import match_filter
 
@@ -250,11 +252,20 @@ def filter_nodes_info(nodes, ms_nodes, args, log):
     """
     # Extend node info with details
 
+    errors_raised = 0
+
     def filter_node_info(node):
+        nonlocal errors_raised
+
         required_keys = ["model", "labels", "workloads"]
         if not all(key in node for key in required_keys):
             node_info = ms_nodes.Node(node["serialNumber"])
-            node_details = node_info.get_details()
+            try:
+                node_details = node_info.get_details()
+            except CheckStatusCodeError as ex_msg:
+                errors_raised += 1
+                log.error("Failed to get details for node '%s': %s", node["name"], ex_msg)
+                return False
 
             ## Model
             node["model"] = node_details.get("model", "unknown")
@@ -283,7 +294,7 @@ def filter_nodes_info(nodes, ms_nodes, args, log):
                 wl_conf_value = next(
                     entry for entry in wl_service_conf["property_list"] if entry["name"] == "Value"
                 )
-                wl_version_name = json.loads(wl_conf_value["value"])["workloadVersionName"]
+                wl_version_name = json.loads(wl_conf_value["value"]).get("workloadVersionName", "unknown")
 
                 node_wl = {
                     "name": wl["device_name"],
@@ -320,7 +331,7 @@ def filter_nodes_info(nodes, ms_nodes, args, log):
             log.info(
                 "Filtering nodes by '%s' with regex pattern: '%s'", filer_name, arg_value.split(":", 1)[1]
             )
-    return list(filter(filter_node_info, nodes))
+    return list(filter(filter_node_info, nodes)), errors_raised
 
 
 def filter_nodes_remote_connections(nodes, ms_nodes, args, log):

@@ -189,8 +189,8 @@ def ms_nodes(parent, arg, log=None):  # ruff: ignore[too-many-return-statements]
         nodes = filter_nodes(nodes, ms_nodes, args, log)
         log.info("%d Nodes matched node filters and are included in the output", len(nodes))
 
-        nodes = filter_nodes_info(nodes, ms_nodes, args, log)
-        log.info("%d Nodes matched node info filters (and are included in the output", len(nodes))
+        nodes, errors_raised = filter_nodes_info(nodes, ms_nodes, args, log)
+        log.info("%d Nodes matched node info filters and are included in the output", len(nodes))
 
         nodes = filter_nodes_remote_connections(nodes, ms_nodes, args, log)
         log.info("%d Nodes matched remote connection filters and are included in the output", len(nodes))
@@ -198,7 +198,7 @@ def ms_nodes(parent, arg, log=None):  # ruff: ignore[too-many-return-statements]
         show_nodes(nodes, log)
 
         file_write(args.work_dir, args.output, nodes, output_methods=["stdout", "key", "file"])
-        return 0
+        return errors_raised
 
     nodes = normalize_nodes_input(
         file_read(args.work_dir, args.input, input_methods=["stdin", "name", "serialNumber", "_id", "file"]),
@@ -235,7 +235,7 @@ def ms_nodes(parent, arg, log=None):  # ruff: ignore[too-many-return-statements]
     if action == "set-workload-state":
         # Apply workload filters
         args.remove_non_matching_workloads = True
-        nodes = filter_nodes_info(nodes, ms_nodes, args, log)
+        nodes, errors_raised = filter_nodes_info(nodes, ms_nodes, args, log)
         if not nodes:
             log.info(
                 "No nodes have workloads matching the specified filters. No workload state changes will be made."
@@ -258,7 +258,7 @@ def ms_nodes(parent, arg, log=None):  # ruff: ignore[too-many-return-statements]
                     )
                     continue
                 node_handle.workload_control(workload_name, args.state.upper())
-        return 0
+        return errors_raised
 
     if action == "remote-connections":
         # Apply remote-connection filters
