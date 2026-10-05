@@ -141,9 +141,9 @@ def filter_versions(workload, args):
             reverse=False,
         )
         # apply slicing
-        try:  # noqa: PLW0717
+        try:  # ruff:ignore[too-many-statements-in-try-clause]
             slice_parts = args.version_list_filter.split(":")
-            if len(slice_parts) == 2:  # noqa: PLR2004
+            if len(slice_parts) == 2:  # ruff:ignore[magic-value-comparison]
                 start = int(slice_parts[0]) if slice_parts[0] else None
                 end = int(slice_parts[1]) if slice_parts[1] else None
                 versions = versions_sorted[start:end]

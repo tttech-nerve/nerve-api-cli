@@ -25,8 +25,6 @@ import os
 import tarfile
 
 import docker
-import requests
-from nerve_lib import CheckStatusCodeError
 
 from .utils import ask_for_confirmation
 from .utils import clean_wl_definition
@@ -120,12 +118,53 @@ def modify_wl_def_registry_type(wl_def, args, log):
     return wl_def
 
 
+def correct_docker_tar_extension(work_dir, file_path, version, log):
+    """Detect the actual tar compression upfront and rename the file / fix the definition if it is wrong.
+
+    The MS relies on the uploaded file name's extension to decide how to decompress the archive, but the
+    extension does not always match the actual content (e.g. a gzip compressed archive named "*.tar").
+    """
+    if not file_path.endswith((".tar", ".tar.gz")):
+        return file_path
+
+    full_path = os.path.join(work_dir, file_path)
+    with open(full_path, "rb") as fh:
+        is_gzip = fh.read(2) == b"\x1f\x8b"
+    is_named_gzip = file_path.endswith(".tar.gz")
+
+    if is_gzip == is_named_gzip:
+        return file_path
+
+    corrected_path = file_path[:-3] if is_named_gzip else f"{file_path}.gz"
+    log.warning(
+        "File '%s' extension does not match its actual content (%s), renaming it to '%s' before upload",
+        file_path,
+        "gzip-compressed tar" if is_gzip else "plain tar",
+        corrected_path,
+    )
+    os.rename(full_path, os.path.join(work_dir, corrected_path))
+
+    original_name = os.path.basename(file_path)
+    corrected_name = os.path.basename(corrected_path)
+    version_files = version.get("files", {})
+    files_iterable = version_files.values() if isinstance(version_files, dict) else version_files
+    for file in files_iterable:
+        if file.get("originalName") == original_name:
+            file["originalName"] = corrected_name
+            file["type"] = ".gz" if is_gzip else ".tar"
+            file["containFileType"] = ""
+            file.pop("name", None)
+            file.pop("path", None)
+
+    return corrected_path
+
+
 def get_repotags_from_docker_tar(work_dir, file_path, log):
     repo_tags = ""
 
     open_method = "r:gz" if file_path.endswith(".tar.gz") else "r"
-    while True:  # noqa: PLR1702
-        try:  # noqa: PLW0717
+    while True:  # ruff:ignore[too-many-nested-blocks]
+        try:  # ruff:ignore[too-many-statements-in-try-clause]
             with tarfile.open(os.path.join(work_dir, file_path), open_method) as tar_file:
                 for member in tar_file.getmembers():
                     if member.name == "manifest.json":
@@ -170,7 +209,7 @@ def push_workload_to_docker_registry(
     work_dir, file_paths, dest_ms_url, repository, tag="latest", ms_usr: str = "", ms_psw: str = "", log=None
 ):
     client = None
-    try:  # noqa: PLW0717
+    try:  # ruff:ignore[too-many-statements-in-try-clause]
         file_tags = {}
         for file_path in file_paths:
             if file_path.endswith((".tar", ".tar.gz")):
@@ -296,7 +335,7 @@ def get_version_file_paths(work_dir, path, wl_name, version, log):
     # some file-names can be docker-tags like ngingx:latest, those need to be checked in the manifest of the docker tar files
     search_file_docker_tags = [s_file for s_file in search_file_names if ":" in s_file]
     found_file_pathes = []
-    for sub_path in resolve_workload_file_paths(work_dir, path):  # noqa: PLR1702
+    for sub_path in resolve_workload_file_paths(work_dir, path):  # ruff:ignore[too-many-nested-blocks]
         # if sub_path is a file, check if it is the searched file and add to list, if it is a folder, search in all subfolders
         if os.path.isfile(sub_path) and os.path.basename(sub_path) in search_file_names:
             log.debug(
@@ -359,7 +398,7 @@ def get_version_file_paths(work_dir, path, wl_name, version, log):
     return found_file_pathes
 
 
-def ms_workloads_provision(ms_workloads, workloads, args, log=None):  # noqa: PLR0912, PLR0914, PLR0915
+def ms_workloads_provision(ms_workloads, workloads, args, log=None):  # ruff:ignore[too-many-locals]
     if args.registry and args.legacy:
         raise ValueError(
             "Cannot set both 'registry' and 'legacy' flags. Please choose one of the registry types for provisioning the workload."
@@ -380,7 +419,7 @@ def ms_workloads_provision(ms_workloads, workloads, args, log=None):  # noqa: PL
     if isinstance(workloads, dict):
         workloads = [workloads]
 
-    for search_workload in workloads:  # noqa: PLR1702
+    for search_workload in workloads:  # ruff:ignore[too-many-nested-blocks]
         workload, wl_def_file_path = get_wl_def_from_path(args.work_dir, args.provision, search_workload, log)
         wl_name = workload["name"]
         wl_type = workload["type"]
@@ -411,6 +450,9 @@ def ms_workloads_provision(ms_workloads, workloads, args, log=None):  # noqa: PL
 
         for version in workload["versions"]:
             wl_file_paths = get_version_file_paths(args.work_dir, args.provision, wl_name, version, log)
+            wl_file_paths = [
+                correct_docker_tar_extension(args.work_dir, f, version, log) for f in wl_file_paths
+            ]
             log.info(
                 "Files for %s workload '%s' with version '%s': \n    - %s",
                 wl_type,
@@ -500,59 +542,9 @@ def ms_workloads_provision(ms_workloads, workloads, args, log=None):  # noqa: PL
 
             wl_def = clean_wl_definition(wl_def_one_version)
 
-            try:
-                ms_workloads.provision_workload(
-                    wl_def,
-                    [os.path.join(args.work_dir, f) if "/registry/" not in f else f for f in wl_file_paths],
-                    api_version,
-                )
-            except CheckStatusCodeError as ex_msg:
-                if (
-                    ex_msg.status_code == requests.codes.internal_server_error
-                    and "Unable to upload file. Please check that archive is in correct format."
-                    in ex_msg.response_text
-                    and wl_def["type"] in {"docker", "docker-compose"}
-                    and any(f.endswith(".tar.gz") for f in wl_file_paths)
-                ):
-                    log.warning(
-                        "Upload to MS failed, probably due to invalid file-type, trying to change it to .tar"
-                    )
-                    renamed_files = []
-                    for f in wl_file_paths:
-                        if f.endswith(".tar.gz"):
-                            os.rename(os.path.join(args.work_dir, f), os.path.join(args.work_dir, f[:-3]))
-                            renamed_files.append(f)
-                    wl_file_paths = [f[:-3] if f.endswith(".tar.gz") else f for f in wl_file_paths]
-                    version_files = wl_def["versions"][0].get("files", [])
-                    files_iterable = (
-                        version_files.values() if isinstance(version_files, dict) else version_files
-                    )
-                    for file in files_iterable:
-                        if "type" in file and file["type"] == ".gz":
-                            if "originalName" in file:
-                                file["originalName"] = (
-                                    file["originalName"][:-3]
-                                    if file["originalName"].endswith(".tar.gz")
-                                    else file["originalName"]
-                                )
-                            file["type"] = ".tar"
-                            file["containFileType"] = ""
-                            file.pop("name", None)
-                            file.pop("path", None)
-
-                    try:
-                        ms_workloads.provision_workload(
-                            wl_def,
-                            [
-                                os.path.join(args.work_dir, f) if "/registry/" not in f else f
-                                for f in wl_file_paths
-                            ],
-                            api_version,
-                        )
-                    finally:
-                        # reverting change
-                        for f in renamed_files:
-                            os.rename(os.path.join(args.work_dir, f[:-3]), os.path.join(args.work_dir, f))
-                    continue
-                raise
+            ms_workloads.provision_workload(
+                wl_def,
+                [os.path.join(args.work_dir, f) if "/registry/" not in f else f for f in wl_file_paths],
+                api_version,
+            )
     return 0

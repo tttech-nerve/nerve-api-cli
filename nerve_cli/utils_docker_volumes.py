@@ -68,6 +68,17 @@ def args_docker_volumes(parser):
     required_group = parser.add_argument_group("Mutually exclusive arguments for docker volumes")
     action_args = required_group.add_mutually_exclusive_group(required=False)
     action_args.add_argument(
+        "--list",
+        nargs="?",
+        const=True,
+        default=False,
+        metavar="PATH",
+        help=(
+            "List Docker volumes on nodes for information purposes. Optionally provide PATH to also write "
+            "the result via 'stdout', 'stdout:json', 'stdout:yaml', or a FILE path (e.g., './volumes_info.json')"
+        ),
+    )
+    action_args.add_argument(
         "--backup",
         action="store_true",
         help="Trigger Docker volume backup creation on nodes (Management System connection only)",
@@ -93,7 +104,7 @@ def filter_unnamed_volumes(volumes, log):
     filtered_volumes = []
     for volume in volumes:
         name = volume.get("name")
-        if len(name) == 64 and all(c in "abcdefghijklmnopqrstuvwxyz0123456789" for c in name):  # noqa: PLR2004
+        if len(name) == 64 and all(c in "abcdefghijklmnopqrstuvwxyz0123456789" for c in name):  # ruff:ignore[magic-value-comparison]
             log.debug("- '%s': skipped (likely a unnamed volume created by a workload)", name)
             continue
         filtered_volumes.append(volume)
@@ -178,7 +189,7 @@ def sort_volumes_per_workload(volumes_info, log: logging.Logger | None = None):
         for serial_number, used_by in volume_info_dict.items():
             log.info("Node '%s':", serial_number)
             for wl_version, vols in used_by.items():
-                group_name = wl_version if wl_version else "unused"
+                group_name = wl_version or "unused"
                 log.info("- Current Volumes used by '%s':", group_name)
                 for vol in vols:
                     if vol.get("backupInfo"):
@@ -225,7 +236,7 @@ def wait_for_import_completed(serial_numbers, volumes_handle, args, log, check_i
                 )
 
 
-def docker_volumes(serial_numbers, args, volumes_handle, log):  # noqa: PLR0912, PLR0914, PLR0915
+def docker_volumes(serial_numbers, args, volumes_handle, log):  # ruff:ignore[too-many-branches, too-many-locals, too-many-statements]
     ret_val = 0
 
     if args.backup and not isinstance(volumes_handle, DockerVolumes):
@@ -238,6 +249,21 @@ def docker_volumes(serial_numbers, args, volumes_handle, log):  # noqa: PLR0912,
 
     # Print the filtered volumes per node and workload
     used_by_group = sort_volumes_per_workload(filtered_volumes, log=log)
+
+    if args.list:
+        for serial_number, volumes in filtered_volumes.items():
+            log.info("Docker volumes on node '%s':", serial_number)
+            for volume in volumes:
+                log.info(
+                    "  - %s (%s)",
+                    volume.get("name"),
+                    format_size_string(int(volume.get("size")), fraction_digits=0),
+                )
+
+        log.info("")  # Add an empty line for better readability between nodes
+
+        if isinstance(args.list, str):
+            file_write(args.work_dir, args.list, filtered_volumes, output_methods=["stdout", "file"])
 
     if args.backup:
         perform_action = ask_for_confirmation(
@@ -284,7 +310,7 @@ def docker_volumes(serial_numbers, args, volumes_handle, log):  # noqa: PLR0912,
                         )
                         ret_val = 2
 
-    if args.download_backup:  # noqa: PLR1702
+    if args.download_backup:  # ruff:ignore[too-many-nested-blocks]
         ret_val = 0
         open_volumes_list = filtered_volumes.copy()
         finished_volumes = {serial_number: [] for serial_number in serial_numbers}
@@ -310,7 +336,7 @@ def docker_volumes(serial_numbers, args, volumes_handle, log):  # noqa: PLR0912,
                         ]
                         if not backup_info:
                             if (
-                                volume.get("size") == 4096  # noqa: PLR2004
+                                volume.get("size") == 4096  # ruff:ignore[magic-value-comparison]
                             ):  # volume is empty (default size for empty volumes), skipping with debug log
                                 log.debug(
                                     "Volume '%s' does not have backup information available but is empty. Skipping download of this volume.",
@@ -340,7 +366,7 @@ def docker_volumes(serial_numbers, args, volumes_handle, log):  # noqa: PLR0912,
                                     )
                                     finished_volumes[serial_number].append(volume)
                                     continue
-                                try:  # noqa: PLW0717
+                                try:  # ruff:ignore[too-many-statements-in-try-clause]
                                     log.info(
                                         "Downloading backup '%s' for volume '%s' ... ",
                                         backup_name,

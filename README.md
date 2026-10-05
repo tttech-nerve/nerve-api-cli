@@ -2,7 +2,7 @@
     <img src="./img/logo-nerve-black.svg" alt="Nerve"/><b>&nbsp;API CLI</b><br><br>
     <a href="./LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg"/></a>
     <a href="https://docs.python.org/3/"><img src="https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13%20%7C%203.14-blue.svg"/></a>
-    <a href="https://docs.nerve.cloud"><img src="https://img.shields.io/badge/nerve-2.9%20%7C%202.10%20%7C%203.0%20%7C%203.1.1-blue.svg"/></a>
+    <a href="https://docs.nerve.cloud"><img src="https://img.shields.io/badge/nerve-2.9%20%7C%202.10%20%7C%203.0%20%7C%203.1.1%20%7C%203.2-blue.svg"/></a>
 </p>
 
 The *Nerve API CLI* provides a command line interface to the REST API of a [Nerve Management System](https://docs.nerve.cloud). It is essentially a command line wrapper for some parts of the [*nerve_lib*](https://github.com/tttech-nerve/nerve-api-python) and can be used to integrate *Nerve* related workflows into a build pipeline and automate common tasks such as workload creation and deployment. Since the CLI does only cover a subset of functions provided by the *[*nerve_lib*](https://github.com/tttech-nerve/nerve-api-python.git)* please refer to the library directly if additional flexibility or functionality is needed.
@@ -50,22 +50,24 @@ The individual Python files are structured along the objects they work on. To ac
 Run `nerve-cli` with arguments. See `--help` for usage details or refer to the help output below:
 
 ```
-usage: nerve-cli [-h] [--yes] [--dry-run] [--ms-url URL] [--ms-user USERNAME] [--ms-password PASSWORD] [--work-dir PATH]
-                 [-v] [--store-credentials]
-                 {cli,template,ms-workloads,ms-nodes,ms-labels,local-node} ...
+usage: nerve-cli [-h] [--yes] [--dry-run] [--ms-url URL] [--ms-user USERNAME] [--ms-password PASSWORD]
+                 [--ms-token TOKEN] [--work-dir PATH] [-v] [--store-credentials]
+                 {cli,template,ms-workloads,ms-nodes,ms-labels,local-node,ms-access-token} ...
 
-Nerve API CLI for managing devices, workloads, labels, and remote connections.
+Nerve API CLI for managing devices, workloads, labels, remote connections, and access tokens.
 
 positional arguments:
-  {cli,template,ms-workloads,ms-nodes,ms-labels,local-node}
+  {cli,template,ms-workloads,ms-nodes,ms-labels,local-node,ms-access-token}
                         Available subcommands:
     cli                 Start interactive CLI mode.
     template            Generate templates for workload definitions or remote connections.
     ms-workloads        Manage workloads on the management system (list, export, provision, delete, deploy).
-    ms-nodes            Manage nodes on the management system (list, reboot, workload state, DNA, remote connections), with
-                        filtering support.
+    ms-nodes            Manage nodes on the management system (list, reboot, workload state, DNA, remote
+                        connections, labels), with filtering support.
     ms-labels           Manage labels on the management system.
     local-node          Manage nodes using local API.
+    ms-access-token     Manage access tokens (list, create, delete, unlock-brute-force, permissions) on the
+                        management system.
 
 options:
   -h, --help            show this help message and exit
@@ -82,13 +84,16 @@ Management System Settings:
   --ms-user USERNAME    Management System login username. Priority: (1) command-line arg, (2) credentials.ini, (3) env-var MS_USR
   --ms-password PASSWORD
                         Management System login password. Priority: (1) command-line arg, (2) credentials.ini, (3) env-var MS_PSW
+  --ms-token TOKEN      Management System login access token. Priority: (1) command-line arg, (2) credentials.ini,
+                        (3) env-var MS_ACCESS_TOKEN. The token has priority over username/password authentication
+                        and can be created with 'ms-access-token create'.
 ```
 
 The credentials may be provided in three different ways (sorted by priority):
 
 - via command line arguments: `poetry run nerve-cli --ms-url my-management-system.nerve.cloud --ms-user myusername --ms-password mypassword`
 - via `credentials.ini` file.
-- via environment variables (set the `MS_URL`, `MS_USR`, and `MS_PSW` environment variables). Check the *set_login_environment_vars.sh* script to understand the naming of the variables.
+- via environment variables (set the `MS_URL`, `MS_USR`, `MS_PSW`, or `MS_ACCESS_TOKEN` environment variables). Check the *set_login_environment_vars.sh* script to understand the naming of the variables.
 
 A credentials file must have the following form:
 ```ini
@@ -100,6 +105,44 @@ password = mypassword
 The file may also contain multiple sections. The section name, defines the management system URL (without https://).
 When working with multiple Management Systems the use of `credentials.ini` file is convenient but note that the password is stored in plain text, which might create a security risk. The CLI argument `--ms-url` should be defined to work with the correct
 management system, but the passwords will be retrieved from the `credentials.ini` without the need to define them in env-vars or the command-line arguments. To add new entries to the credentials file the `--store-credentials` flag can be used. This will add the credentials provided via command-line arguments to the `credentials.ini` file. If the file does not exist, it will be created.
+
+### Login with an access token
+
+Instead of a username/password, an access token can be used to authenticate against the Management System. Access
+tokens allow for a scoped set of permissions and an optional expiration date, which gives better control over what
+an automation or CI pipeline is allowed to do compared to a full user account.
+
+- via command line argument: `poetry run nerve-cli --ms-url my-management-system.nerve.cloud --ms-token mytoken ms-nodes list`
+- via `credentials.ini` file, using the `access_token` key instead of `username`/`password`:
+  ```ini
+  [my-management-system.nerve.cloud]
+  access_token = mytoken
+  ```
+- via the `MS_ACCESS_TOKEN` environment variable.
+
+If both an access token and a username/password are provided, the access token takes priority.
+
+Access tokens are created and managed with the `ms-access-token` subcommand, following the same
+`ms-access-token <action>` pattern as `ms-labels` and `ms-nodes`. Each action shows only its relevant
+arguments in `poetry run nerve-cli ms-access-token <action> -h`.
+
+```bash
+# List all permissions that can be assigned to an access token (default output: permissions.json)
+poetry run nerve-cli ms-access-token permissions
+
+# Create an access token with two permissions and an expiration date, and print it to stdout
+poetry run nerve-cli ms-access-token create my-ci-token --permissions permissions.json \
+    --expiration-date 2027-01-01 --output stdout:token
+
+# List all access tokens (default output: access_tokens.json)
+poetry run nerve-cli ms-access-token list
+
+# Unlock the brute-force protection for an access token
+poetry run nerve-cli ms-access-token unlock-brute-force my-ci-token
+
+# Delete an access token
+poetry run nerve-cli ms-access-token delete my-ci-token
+```
 
 ### Example Usage
 
@@ -145,6 +188,39 @@ To add or delete labels, provide the label source as a positional `SOURCE` argum
 ```bash
 poetry run nerve-cli ms-labels add pairs:env:prod,site:vienna
 poetry run nerve-cli ms-labels delete labels.json
+```
+
+`ms-labels` manages the labels defined on the Management System itself. To manage the labels assigned to
+individual nodes, use `ms-nodes labels` instead:
+
+```bash
+# List labels currently assigned to nodes from nodes.json
+poetry run nerve-cli ms-nodes labels --input nodes.json
+
+# Add/update and delete labels on nodes from nodes.json in a single command
+poetry run nerve-cli ms-nodes labels --input nodes.json --add site=vienna --delete env
+
+# Export all labels of nodes to a directory, and import them back from a file
+poetry run nerve-cli ms-nodes labels --input nodes.json --export labels_backup
+poetry run nerve-cli ms-nodes labels --input nodes.json --import labels_backup/labels_<serial>.yaml
+```
+
+`ms-nodes compose-restrictions` manages the `compose-restrictions.json` file of nodes from INPUT:
+
+```bash
+# Get the compose-restrictions.json content from nodes and save one file per node to a directory
+poetry run nerve-cli ms-nodes compose-restrictions --input nodes.json get compose_restrictions_backup
+
+# Get the active compose-restrictions.json version from nodes and save one file per node to a directory
+poetry run nerve-cli ms-nodes compose-restrictions --input nodes.json version compose_restrictions_backup
+
+# Update the compose-restrictions.json file on nodes using content from a file. The 'version' field in the
+# file must match the version of the currently active compose-restrictions.json file on the node
+poetry run nerve-cli ms-nodes compose-restrictions --input nodes.json update compose_restrictions_backup/compose-restrictions-<serial>.json
+
+# Update the compose-restrictions.json file, reading the currently active version from each node first
+# instead of relying on the version in the update file
+poetry run nerve-cli ms-nodes compose-restrictions --input nodes.json update --force compose_restrictions_backup/compose-restrictions-<serial>.json
 ```
 
 The scripts also provide a workflow to create a new workload. Start by generating a template for the desired workload type:

@@ -25,6 +25,7 @@ import subprocess
 import time
 import webbrowser
 
+from nerve_lib import CheckStatusCodeError
 from nerve_lib import MSUser
 
 from .utils import ask_for_confirmation
@@ -63,9 +64,72 @@ def args_nodes_remote_connections(parser):
     )
     actions_group.add_argument(
         "--prune-remote-connections",
-        help="Remove all remote connections from Management System for current user",
-        action="store_true",
+        metavar="MODE",
+        nargs="?",
+        const="user",
+        choices=["select", "all", "user"],
+        help=(
+            "Remove active remote connections from Management System. MODE: user removes connections for "
+            "the current user, all removes all listed connections, select prompts for a selection."
+        ),
     )
+
+
+def _remote_connection_delete_payload(active_connection):
+    return {
+        "connectionUid": active_connection["connection"]["connectionUid"],
+        "connectionRequestUid": active_connection["connectionRequest"]["requestUid"],
+        "serialNumber": active_connection["connection"]["serialNumber"],
+        "connectionName": active_connection["name"],
+        "type": active_connection["connection"]["type"],
+        "versionId": active_connection["connection"]["target"]["versionId"],
+        "workloadId": active_connection["connection"]["target"]["workloadId"],
+    }
+
+
+def _format_active_remote_connection(active_connection):
+    requested_by = active_connection["connectionRequest"].get("requestedBy", "unknown user")
+    return (
+        f"Node with serial number '{active_connection['connection']['serialNumber']}' - "
+        f"Remote Connection: '{active_connection['name']}' ({active_connection['connection']['type']}) - "
+        f"requested by '{requested_by}'"
+    )
+
+
+def _parse_remote_connection_selection(selection, max_index):
+    selected_indexes = set()
+    for raw_selection_part in selection.split(","):
+        selection_part = raw_selection_part.strip()
+        if not selection_part:
+            continue
+        if "-" in selection_part:
+            start_str, end_str = selection_part.split("-", maxsplit=1)
+            start = int(start_str)
+            end = int(end_str)
+            if start > end:
+                raise ValueError(f"Invalid selection range '{selection_part}'")
+            selected_indexes.update(range(start, end + 1))
+        else:
+            selected_indexes.add(int(selection_part))
+
+    invalid_indexes = [index for index in selected_indexes if index < 1 or index > max_index]
+    if invalid_indexes:
+        raise ValueError(f"Selection contains invalid connection number(s): {invalid_indexes}")
+    return selected_indexes
+
+
+def _select_active_remote_connections(active_connections):
+    print("Active remote connections:")
+    for index, active_connection in enumerate(active_connections, start=1):
+        print(f"{index}: {_format_active_remote_connection(active_connection)}")
+
+    selection = input("Select remote connections to prune (for example 1-3,5,6-9): ")
+    selected_indexes = _parse_remote_connection_selection(selection, len(active_connections))
+    return [
+        active_connection
+        for index, active_connection in enumerate(active_connections, start=1)
+        if index in selected_indexes
+    ]
 
 
 def get_existing_remotes(ms_nodes, nodes):
@@ -98,7 +162,7 @@ def find_in_remotes_list(remote_element, remotes_list):
     return {}
 
 
-def nodes_remote_connections(ms_nodes, nodes, args, log):  # noqa: PLR0912, PLR0914, PLR0915
+def nodes_remote_connections(ms_nodes, nodes, args, log):  # ruff:ignore[too-many-branches, too-many-locals, too-many-statements]
     if args.add:
         if args.input.startswith("stdin:") and args.add.startswith("stdin:"):
             log.error(
@@ -247,41 +311,62 @@ def nodes_remote_connections(ms_nodes, nodes, args, log):  # noqa: PLR0912, PLR0
         return ret_value
 
     if args.prune_remote_connections:
+        prune_mode = args.prune_remote_connections
+        if prune_mode is True:
+            prune_mode = "user"
+
         active_connections = ms_nodes.get_active_remote_connections()
         for entry in active_connections:
-            log.debug("Connection established by '%s'", entry["connectionRequest"]["requestedBy"])
-        ms_user = MSUser(ms_nodes.ms)
-        user_id = ms_user.get(ms_nodes.ms.usr)["_id"]
-        remote_ids = []
-        for entry in active_connections:
-            if entry["connectionRequest"]["userId"] != user_id:
-                continue
-            remote_ids.append({
-                "connectionUid": entry["connection"]["connectionUid"],
-                "connectionRequestUid": entry["connectionRequest"]["requestUid"],
-                "serialNumber": entry["connection"]["serialNumber"],
-                "connectionName": entry["name"],
-                "type": entry["connection"]["type"],
-                "versionId": entry["connection"]["target"]["versionId"],
-                "workloadId": entry["connection"]["target"]["workloadId"],
-            })
+            log.debug(
+                "Connection established by '%s'",
+                entry["connectionRequest"].get("requestedBy", "unknown user"),
+            )
+
+        if not active_connections:
+            log.info("No active remote connections found")
+            return 0
+
+        current_user = None
+        if prune_mode == "user":
+            try:
+                current_user = MSUser(ms_nodes.ms).get_current_user()
+            except (CheckStatusCodeError, RuntimeError) as ex_msg:
+                log.warning(
+                    "Could not read current user: %s. Listing all active remote connections instead.",
+                    ex_msg,
+                )
+                prune_mode = "all"
+
+        selected_connections = active_connections
+        target_description = "all users"
+        if prune_mode == "user":
+            selected_connections = [
+                entry
+                for entry in active_connections
+                if entry["connectionRequest"]["userId"] == current_user["_id"]
+            ]
+            target_description = f"user '{current_user['username']}'"
+        elif prune_mode == "select":
+            try:
+                selected_connections = _select_active_remote_connections(active_connections)
+            except ValueError as ex_msg:
+                log.error("Invalid remote connection selection: %s", ex_msg)
+                return 2
+            target_description = "selected users"
+
+        remote_ids = [_remote_connection_delete_payload(entry) for entry in selected_connections]
         prune_info_str = ""
         if not remote_ids:
-            log.info(
-                "No active remote connections found for user '%s'", ms_user.get(ms_nodes.ms.usr)["username"]
-            )
+            log.info("No active remote connections found for %s", target_description)
             return 0
-        for entry in remote_ids:
-            prune_info_str += f"Node with serial number '{entry['serialNumber']}' - Remote Connection: '{entry['connectionName']}' ({entry['type']})\n"
+        for entry in selected_connections:
+            prune_info_str += f"{_format_active_remote_connection(entry)}\n"
         perform_action = ask_for_confirmation(
             args,
-            f"Are you sure you want to remove the following active remote connections for user '{ms_user.get(ms_nodes.ms.usr)['username']}'?\n{prune_info_str}",
+            f"Are you sure you want to remove the following active remote connections for {target_description}?\n{prune_info_str}",
         )
         if not perform_action:
-            log.info(
-                "Skipping pruning active remote connections for user '%s'",
-                ms_user.get(ms_nodes.ms.usr)["username"],
-            )
+            log.info("Skipping pruning active remote connections for %s", target_description)
             return 0
         ms_nodes.remove_active_remote_connections(remote_ids)
     return 0

@@ -58,7 +58,6 @@ def args_ms_workloads_list_versions(parser):
         "Filter arguments to only include specific workload versions in the list results"
     )
     filter_version_args.add_argument(
-        "-v",
         "--version-name",
         metavar="PATTERN",
         help="Filter by version name. Supports regex with prefix 'regex:' (e.g., 'regex:v[0-9]+', 'v1.0')",
@@ -244,7 +243,7 @@ def ms_workloads_list(ms_workloads, args, log):
         "%d workloads including %d versions fetched from the '%s'",
         len(wl_list),
         sum(len(wl.get("versions", [])) for wl in wl_list),
-        args.ms_url,
+        ms_workloads.ms.ms_url,
     )
 
     # apply workload level filters
